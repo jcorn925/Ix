@@ -61,7 +61,7 @@ object SourceType {
 
 final case class Provenance(
   sourceUri:  String,
-  sourceHash: String,
+  sourceHash: Option[String],
   extractor:  String,
   sourceType: SourceType,
   observedAt: Instant

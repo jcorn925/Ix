@@ -113,7 +113,7 @@ class ModelSpec extends AnyFlatSpec with Matchers {
   "Provenance" should "round-trip through JSON" in {
     val prov = Provenance(
       sourceUri    = "git://repo/file.scala",
-      sourceHash   = "abc123",
+      sourceHash   = Some("abc123"),
       extractor    = "tree-sitter",
       sourceType   = SourceType.Code,
       observedAt   = Instant.parse("2025-01-01T00:00:00Z")
@@ -135,13 +135,13 @@ class ModelSpec extends AnyFlatSpec with Matchers {
 
     val prov = Provenance(
       sourceUri  = "git://repo/file.scala",
-      sourceHash = "def456",
+      sourceHash = Some("def456"),
       extractor  = "tree-sitter",
       sourceType = SourceType.Code,
       observedAt = Instant.parse("2025-06-01T12:00:00Z")
     )
 
-    val ops: List[PatchOp] = List(
+    val ops: Vector[PatchOp] = Vector(
       PatchOp.UpsertNode(
         GraphNode(
           id         = nodeId,
@@ -173,7 +173,7 @@ class ModelSpec extends AnyFlatSpec with Matchers {
       PatchOp.AssertClaim(
         Claim(
           id         = claimId,
-          entityId   = nodeId.value,
+          entityId   = nodeId,
           statement  = "function foo is pure",
           status     = ClaimStatus.Active,
           provenance = prov,
@@ -192,7 +192,7 @@ class ModelSpec extends AnyFlatSpec with Matchers {
       source    = PatchSource(uri = "git://repo", ref = Some("main")),
       baseRev   = Rev(0L),
       ops       = ops,
-      replaces  = None,
+      replaces  = Vector.empty,
       intent    = Some("initial extraction")
     )
 

@@ -1,7 +1,5 @@
 package ix.memory.model
 
-import java.util.UUID
-
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 
@@ -30,7 +28,7 @@ object ClaimStatus {
 
 final case class Claim(
   id:         ClaimId,
-  entityId:   UUID,
+  entityId:   NodeId,
   statement:  String,
   status:     ClaimStatus,
   provenance: Provenance,

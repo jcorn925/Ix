@@ -30,7 +30,7 @@ final case class ConflictSet(
   id:              ConflictId,
   reason:          String,
   status:          ConflictStatus,
-  candidateClaims: List[ClaimId],
+  candidateClaims: Vector[ClaimId],
   winnerClaimId:   Option[ClaimId],
   createdRev:      Rev
 )

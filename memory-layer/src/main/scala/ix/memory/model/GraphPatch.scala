@@ -54,8 +54,8 @@ final case class GraphPatch(
   timestamp: Instant,
   source:    PatchSource,
   baseRev:   Rev,
-  ops:       List[PatchOp],
-  replaces:  Option[PatchId],
+  ops:       Vector[PatchOp],
+  replaces:  Vector[PatchId],
   intent:    Option[String]
 )
 
