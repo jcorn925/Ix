@@ -1,3 +1,4 @@
+version: "3.8"
 services:
   arangodb:
     image: arangodb:3.12
@@ -5,3 +6,32 @@ services:
       - "8529:8529"
     environment:
       ARANGO_NO_AUTH: "1"
+    volumes:
+      - ix_arango_data:/var/lib/arangodb3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8529/_api/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  memory-layer:
+    build:
+      context: ./memory-layer
+      dockerfile: Dockerfile
+    depends_on:
+      arangodb:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+    environment:
+      ARANGO_HOST: arangodb
+      ARANGO_PORT: "8529"
+      ARANGO_DATABASE: ix_memory
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  ix_arango_data:
