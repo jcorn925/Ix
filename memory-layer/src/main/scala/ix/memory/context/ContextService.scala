@@ -48,8 +48,14 @@ class ContextService(
         ))
       }
 
-      // 6. Detect conflicts among scored claims
-      conflicts = conflictDetector.detect(scored)
+      // 6. Detect conflicts among scored claims (Pass 1+2)
+      pass12Conflicts = conflictDetector.detect(scored)
+
+      // 6.5. Refine conflicts with LLM (Pass 3, if available)
+      conflicts <- conflictDetector match {
+        case impl: ConflictDetectorImpl => impl.refineWithLlm(pass12Conflicts, scored)
+        case _ => IO.pure(pass12Conflicts)
+      }
 
       // 7. Relevance score: weight claims by hop distance from seeds
       relevant = RelevanceScorer.score(scored, seeds.map(_.id).toSet, expanded.edges)

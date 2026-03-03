@@ -1,13 +1,16 @@
 package ix.memory.context
 
 import java.util.UUID
+
+import cats.effect.IO
+import cats.implicits._
 import ix.memory.model._
 
 trait ConflictDetector {
   def detect(claims: Vector[ScoredClaim]): Vector[ConflictReport]
 }
 
-class ConflictDetectorImpl extends ConflictDetector {
+class ConflictDetectorImpl(llmJudge: Option[LlmJudge] = None) extends ConflictDetector {
 
   /**
    * Multi-pass conflict detection.
@@ -45,6 +48,54 @@ class ConflictDetectorImpl extends ConflictDetector {
         }
       }
     }.toVector
+  }
+
+  /**
+   * Pass 3: LLM-assisted conflict detection.
+   *
+   * Takes the conflicts found by Pass 1+2 and asks the LLM to evaluate
+   * whether each pair truly conflicts semantically. This can:
+   * - Upgrade the reason with LLM explanation
+   * - Dismiss false positives (remove conflict)
+   * - Provide a preferred claim recommendation
+   *
+   * Only runs if an LlmJudge is provided.
+   */
+  def refineWithLlm(
+    conflicts: Vector[ConflictReport],
+    claims: Vector[ScoredClaim]
+  ): IO[Vector[ConflictReport]] = {
+    llmJudge match {
+      case None => IO.pure(conflicts) // No LLM, return as-is
+      case Some(judge) =>
+        conflicts.traverse { conflict =>
+          val claimA = claims.find(_.claim.id == conflict.claimA).map(_.claim)
+          val claimB = claims.find(_.claim.id == conflict.claimB).map(_.claim)
+
+          (claimA, claimB) match {
+            case (Some(a), Some(b)) =>
+              judge.judge(a, b).map {
+                case Some(judgment) if judgment.isConflict =>
+                  Some(conflict.copy(
+                    reason = s"${conflict.reason} [LLM: ${judgment.explanation}]",
+                    recommendation = judgment.preferredClaim
+                      .flatMap(id => claims.find(_.claim.id == id))
+                      .map(sc => s"LLM recommends '${sc.claim.statement}' (LLM confidence: ${judgment.confidence})")
+                      .getOrElse(conflict.recommendation)
+                  ))
+                case Some(_) =>
+                  // LLM says not a conflict — dismiss
+                  None
+                case None =>
+                  // LLM didn't respond — keep original
+                  Some(conflict)
+              }
+            case _ =>
+              // Claims not found — keep original conflict
+              IO.pure(Some(conflict))
+          }
+        }.map(_.flatten)
+    }
   }
 
   /** Check whether two statement strings share at least one 4-char stem. */
