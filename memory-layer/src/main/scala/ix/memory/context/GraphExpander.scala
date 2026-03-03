@@ -1,7 +1,7 @@
 package ix.memory.context
 
 import cats.effect.IO
-import cats.syntax.traverse._
+import cats.syntax.parallel._
 
 import ix.memory.db.{GraphQueryApi, Direction, ExpandResult}
 import ix.memory.model._
@@ -12,7 +12,7 @@ class GraphExpander(queryApi: GraphQueryApi) {
              predicates: Option[Set[String]] = None,
              asOfRev: Option[Rev] = None): IO[ExpandResult] =
     seeds
-      .traverse { nodeId =>
+      .parTraverse { nodeId =>
         queryApi.expand(tenant, nodeId, Direction.Both, predicates, hops, asOfRev)
       }
       .map { results =>
