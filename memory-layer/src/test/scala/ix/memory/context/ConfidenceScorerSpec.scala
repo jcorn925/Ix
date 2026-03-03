@@ -66,7 +66,9 @@ class ConfidenceScorerSpec extends AnyFlatSpec with Matchers {
   it should "reduce score for stale sources" in {
     val claim = makeClaim(SourceType.Code)
     val fresh = scorer.score(claim, defaultCtx.copy(sourceChanged = false))
-    val stale = scorer.score(claim, defaultCtx.copy(sourceChanged = true))
+    // Use an observedAt 60 days in the past so the recency penalty kicks in
+    val staleObservedAt = Instant.now().minus(java.time.Duration.ofDays(60))
+    val stale = scorer.score(claim, defaultCtx.copy(sourceChanged = true, observedAt = staleObservedAt))
 
     fresh.confidence.score should be > stale.confidence.score
   }

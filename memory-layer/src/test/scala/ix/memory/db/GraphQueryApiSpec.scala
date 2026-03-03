@@ -9,9 +9,10 @@ import io.circe.Json
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+import ix.memory.TestDbHelper
 import ix.memory.model._
 
-class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
+class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestDbHelper {
 
   val clientResource = ArangoClient.resource(
     host = "localhost", port = 8529,
@@ -45,6 +46,7 @@ class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _        <- client.ensureSchema()
+        _        <- cleanDatabase(client)
         writeApi  = new ArangoGraphWriteApi(client)
         queryApi  = new ArangoGraphQueryApi(client)
         nodeId    = NodeId(UUID.randomUUID())
@@ -79,6 +81,7 @@ class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _        <- client.ensureSchema()
+        _        <- cleanDatabase(client)
         writeApi  = new ArangoGraphWriteApi(client)
         queryApi  = new ArangoGraphQueryApi(client)
         nodeId    = NodeId(UUID.randomUUID())
@@ -120,6 +123,7 @@ class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _        <- client.ensureSchema()
+        _        <- cleanDatabase(client)
         writeApi  = new ArangoGraphWriteApi(client)
         queryApi  = new ArangoGraphQueryApi(client)
         funcId1   = NodeId(UUID.randomUUID())
@@ -150,6 +154,7 @@ class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _        <- client.ensureSchema()
+        _        <- cleanDatabase(client)
         writeApi  = new ArangoGraphWriteApi(client)
         queryApi  = new ArangoGraphQueryApi(client)
         nodeA     = NodeId(UUID.randomUUID())
@@ -193,6 +198,7 @@ class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _        <- client.ensureSchema()
+        _        <- cleanDatabase(client)
         writeApi  = new ArangoGraphWriteApi(client)
         queryApi  = new ArangoGraphQueryApi(client)
         node1     = NodeId(UUID.randomUUID())
@@ -218,6 +224,7 @@ class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _        <- client.ensureSchema()
+        _        <- cleanDatabase(client)
         writeApi  = new ArangoGraphWriteApi(client)
         queryApi  = new ArangoGraphQueryApi(client)
         nodeId    = NodeId(UUID.randomUUID())
@@ -246,6 +253,7 @@ class GraphQueryApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _        <- client.ensureSchema()
+        _        <- cleanDatabase(client)
         writeApi  = new ArangoGraphWriteApi(client)
         queryApi  = new ArangoGraphQueryApi(client)
         nodeId    = NodeId(UUID.randomUUID())

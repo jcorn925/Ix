@@ -15,7 +15,7 @@ import ix.memory.db._
 import ix.memory.ingestion.{IngestionService, ParserRouter}
 import ix.memory.model._
 
-class EndToEndSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
+class EndToEndSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestDbHelper {
 
   val clientResource = ArangoClient.resource(
     host = "localhost", port = 8529,
@@ -65,6 +65,7 @@ class EndToEndSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         // Ingest the sample billing_service.py fixture
         commit <- ingestion.ingestFile(fixtureFilePath)
         // Query about billing retry
@@ -110,6 +111,7 @@ class EndToEndSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _         <- client.ensureSchema()
+        _         <- cleanDatabase(client)
         // Step 1: Ingest billing_service.py (creates nodes for BillingService etc.)
         commit1   <- ingestion.ingestFile(fixtureFilePath)
 
@@ -190,6 +192,7 @@ class EndToEndSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _ <- client.ensureSchema()
+        _ <- cleanDatabase(client)
 
         // Step 1: Commit patch at rev N with billing_core node
         patch1 = makePatch(
@@ -258,6 +261,7 @@ class EndToEndSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _ <- client.ensureSchema()
+        _ <- cleanDatabase(client)
 
         // Step 1: First ingestion
         commit1 <- ingestion.ingestFile(fixtureFilePath)

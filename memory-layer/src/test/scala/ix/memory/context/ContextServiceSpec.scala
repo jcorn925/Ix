@@ -9,10 +9,11 @@ import io.circe.Json
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+import ix.memory.TestDbHelper
 import ix.memory.db._
 import ix.memory.model._
 
-class ContextServiceSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
+class ContextServiceSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestDbHelper {
 
   val clientResource = ArangoClient.resource(
     host = "localhost", port = 8529,
@@ -73,6 +74,7 @@ class ContextServiceSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         _      <- writeApi.commitPatch(patch)
         result <- contextService.query("How does billing retry?")
       } yield {
@@ -95,6 +97,7 @@ class ContextServiceSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         result <- contextService.query("something totally unknown xyz123")
       } yield {
         result.nodes shouldBe empty
@@ -134,6 +137,7 @@ class ContextServiceSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         _      <- writeApi.commitPatch(patch)
         result <- contextService.query("What does billing do?")
       } yield {
@@ -176,6 +180,7 @@ class ContextServiceSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         _      <- writeApi.commitPatch(patch)
         result <- contextService.query("How does billing work?")
       } yield {
@@ -205,6 +210,7 @@ class ContextServiceSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         _      <- writeApi.commitPatch(patch)
         result <- contextService.query("billing info")
       } yield {

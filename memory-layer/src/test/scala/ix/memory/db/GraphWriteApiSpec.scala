@@ -9,9 +9,10 @@ import io.circe.Json
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+import ix.memory.TestDbHelper
 import ix.memory.model._
 
-class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
+class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestDbHelper {
 
   val clientResource = ArangoClient.resource(
     host = "localhost", port = 8529,
@@ -45,6 +46,7 @@ class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         api     = new ArangoGraphWriteApi(client)
         nodeId  = NodeId(UUID.randomUUID())
         patch   = makePatch(
@@ -71,6 +73,7 @@ class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _       <- client.ensureSchema()
+        _       <- cleanDatabase(client)
         api      = new ArangoGraphWriteApi(client)
         nodeId   = NodeId(UUID.randomUUID())
         patchId  = PatchId(UUID.randomUUID())
@@ -101,6 +104,7 @@ class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _       <- client.ensureSchema()
+        _       <- cleanDatabase(client)
         api      = new ArangoGraphWriteApi(client)
         nodeId1  = NodeId(UUID.randomUUID())
         // First patch to establish rev 1
@@ -141,6 +145,7 @@ class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         api     = new ArangoGraphWriteApi(client)
         nodeId  = NodeId(UUID.randomUUID())
         patch   = makePatch(
@@ -155,8 +160,8 @@ class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
         )
         _      <- api.commitPatch(patch)
         result <- client.queryOne(
-          "FOR n IN nodes FILTER n._key == @key RETURN n",
-          Map("key" -> nodeId.value.toString.asInstanceOf[AnyRef])
+          "FOR n IN nodes FILTER n.logical_id == @id AND n.deleted_rev == null RETURN n",
+          Map("id" -> nodeId.value.toString.asInstanceOf[AnyRef])
         )
       } yield {
         result shouldBe defined
@@ -177,6 +182,7 @@ class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     clientResource.use { client =>
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         api     = new ArangoGraphWriteApi(client)
         nodeId  = NodeId(UUID.randomUUID())
         // First patch: create the node
@@ -197,10 +203,10 @@ class GraphWriteApiSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
           ops     = Vector(PatchOp.DeleteNode(nodeId))
         )
         res2   <- api.commitPatch(patch2)
-        // Query the node to verify soft delete
+        // Query the node to verify soft delete (find by logical_id, expect deleted_rev set)
         result <- client.queryOne(
-          "FOR n IN nodes FILTER n._key == @key RETURN n",
-          Map("key" -> nodeId.value.toString.asInstanceOf[AnyRef])
+          "FOR n IN nodes FILTER n.logical_id == @id AND n.deleted_rev != null RETURN n",
+          Map("id" -> nodeId.value.toString.asInstanceOf[AnyRef])
         )
       } yield {
         res1.status shouldBe CommitStatus.Ok

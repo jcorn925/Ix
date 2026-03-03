@@ -14,13 +14,14 @@ import org.http4s.implicits._
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+import ix.memory.TestDbHelper
 import ix.memory.conflict.ConflictService
 import ix.memory.context._
 import ix.memory.db._
 import ix.memory.ingestion.{IngestionService, ParserRouter}
 import ix.memory.model._
 
-class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
+class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestDbHelper {
 
   val clientResource = ArangoClient.resource(
     host = "localhost", port = 8529,
@@ -102,6 +103,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         _    <- writeApi.commitPatch(patch)
         req   = Request[IO](Method.GET, Uri.unsafeFromString(s"/v1/entity/${nodeId.value}"))
         resp <- app.run(req)
@@ -125,6 +127,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         req   = Request[IO](Method.GET, Uri.unsafeFromString(s"/v1/entity/$fakeId"))
         resp <- app.run(req)
       } yield {
@@ -143,6 +146,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         req   = Request[IO](Method.GET, Uri.unsafeFromString(s"/v1/conflicts"))
         resp <- app.run(req)
         body <- resp.as[Json]
@@ -169,6 +173,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _      <- client.ensureSchema()
+        _      <- cleanDatabase(client)
         result <- writeApi.commitPatch(patch)
         diffReq = Json.obj(
           "fromRev"  -> 0L.asJson,
@@ -197,6 +202,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         diffReq = Json.obj(
           "fromRev" -> 5L.asJson,
           "toRev"   -> 2L.asJson
@@ -226,6 +232,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         _    <- writeApi.commitPatch(patch)
         ctxReq = Json.obj(
           "query"  -> "billing".asJson
@@ -250,6 +257,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _       <- client.ensureSchema()
+        _       <- cleanDatabase(client)
         tmpFile <- IO.blocking {
           val f = java.nio.file.Files.createTempFile("ix-test-", ".py")
           java.nio.file.Files.writeString(f,
@@ -285,6 +293,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         ingestReq = Json.obj(
           "path"   -> "/tmp/../etc/passwd".asJson
         )
@@ -306,6 +315,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         diffReq = Json.obj(
           "fromRev" -> 0L.asJson,
           "toRev"   -> 1L.asJson
@@ -334,6 +344,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         _    <- writeApi.commitPatch(patch)
         req   = Request[IO](Method.POST, Uri.unsafeFromString(s"/v1/provenance/${nodeId.value}"))
         resp <- app.run(req)
@@ -357,6 +368,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         body  = Json.obj(
           "title"     -> "Use exponential backoff".asJson,
           "rationale" -> "Better for transient failures".asJson
@@ -388,6 +400,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         _    <- writeApi.commitPatch(patch)
         body  = Json.obj("term" -> "billing_search_test".asJson)
         req   = Request[IO](Method.POST, uri"/v1/search").withEntity(body)
@@ -410,6 +423,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         req   = Request[IO](Method.GET, uri"/v1/truth")
         resp <- app.run(req)
       } yield {
@@ -428,6 +442,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         body  = Json.obj("statement" -> "Ship retry system by Friday".asJson)
         req   = Request[IO](Method.POST, uri"/v1/truth").withEntity(body)
         resp <- app.run(req)
@@ -449,6 +464,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         req   = Request[IO](Method.GET, uri"/v1/patches")
         resp <- app.run(req)
       } yield {
@@ -475,6 +491,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         _    <- writeApi.commitPatch(patch)
         req   = Request[IO](Method.GET, Uri.unsafeFromString(s"/v1/patches/${patchId.value}"))
         resp <- app.run(req)
@@ -497,6 +514,7 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
 
       for {
         _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
         req   = Request[IO](Method.GET, Uri.unsafeFromString(s"/v1/patches/$fakeId"))
         resp <- app.run(req)
       } yield {

@@ -41,6 +41,9 @@ lazy val memoryLayer = (project in file("memory-layer"))
       "org.typelevel"  %% "cats-effect-testing-scalatest" % "1.5.0" % Test
     ),
 
+    // Run tests sequentially to avoid ArangoDB write-write conflicts on shared DB
+    Test / parallelExecution := false,
+
     // Assembly settings
     assembly / mainClass := Some("ix.memory.Main"),
     assembly / assemblyJarName := "ix-memory-layer.jar",
