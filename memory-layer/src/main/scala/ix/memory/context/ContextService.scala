@@ -1,0 +1,56 @@
+package ix.memory.context
+
+import cats.effect.IO
+
+import ix.memory.db.GraphQueryApi
+import ix.memory.model._
+
+class ContextService(
+  queryApi:         GraphQueryApi,
+  seeder:           GraphSeeder,
+  expander:         GraphExpander,
+  claimCollector:   ClaimCollector,
+  confidenceScorer: ConfidenceScorer,
+  conflictDetector: ConflictDetector
+) {
+
+  def query(tenant: TenantId, question: String,
+            asOfRev: Option[Rev] = None): IO[StructuredContext] =
+    for {
+      // 1. Extract entity keywords from the natural language query
+      terms <- IO.pure(EntityExtractor.extract(question))
+
+      // 2. Seed: search the graph for nodes matching extracted terms
+      seeds <- seeder.seed(tenant, terms, asOfRev)
+
+      // 3. Expand: traverse the graph 1 hop from each seed
+      expanded <- expander.expand(tenant, seeds.map(_.id), hops = 1, asOfRev = asOfRev)
+
+      // 4. Collect claims for all discovered nodes
+      allNodeIds = (seeds.map(_.id) ++ expanded.nodes.map(_.id)).distinct
+      claims <- claimCollector.collect(tenant, allNodeIds)
+
+      // 5. Score each claim
+      rev <- asOfRev.fold(queryApi.getLatestRev(tenant))(IO.pure)
+      scored = claims.map(c => confidenceScorer.score(c, rev))
+
+      // 6. Detect conflicts among scored claims
+      conflicts = conflictDetector.detect(scored)
+
+      // 7. Rank claims by confidence (descending)
+      ranked = ContextRanker.rank(scored)
+
+    // 8. Assemble and return StructuredContext
+    } yield StructuredContext(
+      claims    = ranked.toList,
+      conflicts = conflicts.toList,
+      nodes     = (seeds ++ expanded.nodes).distinctBy(_.id).toList,
+      edges     = expanded.edges.toList,
+      metadata  = ContextMetadata(
+        query        = question,
+        seedEntities = seeds.map(_.id).toList,
+        hopsExpanded = 1,
+        asOfRev      = rev
+      )
+    )
+}
