@@ -34,6 +34,9 @@ class IngestionRoutes(ingestionService: IngestionService) {
       (for {
         body     <- req.as[IngestRequest]
         tenantId <- IO.fromTry(scala.util.Try(UUID.fromString(body.tenant))).map(TenantId(_))
+        _        <- IO.raiseWhen(body.path.contains(".."))(
+          new IllegalArgumentException("Path traversal not allowed")
+        )
         path      = Paths.get(body.path)
         result   <- ingestionService.ingestPath(tenantId, path, body.language, body.recursive.getOrElse(false))
         resp     <- Ok(IngestResponse(

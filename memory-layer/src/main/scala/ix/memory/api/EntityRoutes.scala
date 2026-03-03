@@ -10,7 +10,7 @@ import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
 
-import ix.memory.db.{ArangoClient, Direction, GraphQueryApi}
+import ix.memory.db.{Direction, GraphQueryApi}
 import ix.memory.model._
 
 case class EntityResponse(node: GraphNode, claims: Vector[Claim], edges: Vector[GraphEdge])
@@ -31,7 +31,7 @@ object ProvenanceResponse {
   implicit val encoder: Encoder[ProvenanceResponse] = deriveEncoder[ProvenanceResponse]
 }
 
-class EntityRoutes(queryApi: GraphQueryApi, client: ArangoClient) {
+class EntityRoutes(queryApi: GraphQueryApi) {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -72,44 +72,27 @@ class EntityRoutes(queryApi: GraphQueryApi, client: ArangoClient) {
   }
 
   private def queryProvenanceChain(tenant: TenantId, nodeId: NodeId): IO[Vector[ProvenanceEntry]] =
-    client.query(
-      """FOR p IN patches
-        |  FILTER p.tenant == @tenant
-        |  SORT p.rev ASC
-        |  RETURN p""".stripMargin,
-      Map(
-        "tenant" -> tenant.value.toString.asInstanceOf[AnyRef]
-      )
-    ).map { jsons =>
+    queryApi.getPatchesForEntity(tenant, nodeId).map { jsons =>
       jsons.flatMap { json =>
         val c = json.hcursor
         val dataC = c.downField("data")
-        // Check if this patch contains ops referencing our entity
-        val ops = dataC.downField("ops").focus.flatMap(_.asArray).getOrElse(Vector.empty)
-        val touchesEntity = ops.exists { op =>
-          val opC = op.hcursor
-          opC.get[String]("id").toOption.contains(nodeId.value.toString) ||
-            opC.get[String]("entityId").toOption.contains(nodeId.value.toString)
-        }
-        if (touchesEntity) {
-          for {
-            patchIdStr <- dataC.get[String]("patchId").toOption
-              .orElse(c.get[String]("patch_id").toOption)
-            patchId    <- scala.util.Try(UUID.fromString(patchIdStr)).toOption.map(PatchId(_))
-            rev        <- c.get[Long]("rev").toOption.map(Rev(_))
-            sourceUri  <- dataC.downField("source").get[String]("uri").toOption
-            sourceHash  = dataC.downField("source").get[String]("sourceHash").toOption
-            extractor  <- dataC.downField("source").get[String]("extractor").toOption
-            stStr      <- dataC.downField("source").get[String]("sourceType").toOption
-            sourceType <- SourceType.decoder.decodeJson(Json.fromString(stStr)).toOption
-            intent      = dataC.get[String]("intent").toOption
-          } yield ProvenanceEntry(
-            patchId = patchId,
-            rev     = rev,
-            source  = PatchSource(sourceUri, sourceHash, extractor, sourceType),
-            intent  = intent
-          )
-        } else None
+        for {
+          patchIdStr <- dataC.get[String]("patchId").toOption
+            .orElse(c.get[String]("patch_id").toOption)
+          patchId    <- scala.util.Try(UUID.fromString(patchIdStr)).toOption.map(PatchId(_))
+          rev        <- c.get[Long]("rev").toOption.map(Rev(_))
+          sourceUri  <- dataC.downField("source").get[String]("uri").toOption
+          sourceHash  = dataC.downField("source").get[String]("sourceHash").toOption
+          extractor  <- dataC.downField("source").get[String]("extractor").toOption
+          stStr      <- dataC.downField("source").get[String]("sourceType").toOption
+          sourceType <- SourceType.decoder.decodeJson(Json.fromString(stStr)).toOption
+          intent      = dataC.get[String]("intent").toOption
+        } yield ProvenanceEntry(
+          patchId = patchId,
+          rev     = rev,
+          source  = PatchSource(sourceUri, sourceHash, extractor, sourceType),
+          intent  = intent
+        )
       }.toVector
     }
 }

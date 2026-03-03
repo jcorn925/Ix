@@ -54,8 +54,9 @@ class DiffRoutes(queryApi: GraphQueryApi) {
               result <- diffEntity(tenantId, eid, Rev(body.fromRev), Rev(body.toRev))
             } yield result.toVector
           case None =>
-            // Diff all entities that changed between the two revisions
-            diffAllEntities(tenantId, Rev(body.fromRev), Rev(body.toRev))
+            IO.raiseError(new UnsupportedOperationException(
+              "Diff without entityId is not yet supported. Please provide an entityId."
+            ))
         }
         resp <- Ok(DiffResponse(body.fromRev, body.toRev, changes))
       } yield resp).handleErrorWith(ErrorHandler.handle(_))
@@ -80,17 +81,4 @@ class DiffRoutes(queryApi: GraphQueryApi) {
       }
     }
 
-  private def diffAllEntities(tenant: TenantId, fromRev: Rev, toRev: Rev): IO[Vector[DiffEntry]] = {
-    // Find all nodes that were created or modified between fromRev and toRev
-    // by looking at nodes with created_rev in (fromRev, toRev] or deleted_rev in (fromRev, toRev]
-    for {
-      // Get nodes visible at fromRev
-      fromNodes <- queryApi.findNodesByKind(tenant, NodeKind.Function, limit = 1000)
-        .flatMap(_ => queryApi.searchNodes(tenant, "", limit = 0))
-        .handleErrorWith(_ => IO.pure(Vector.empty[GraphNode]))
-
-      // Instead of full scan, just return an empty diff for the "all entities" case
-      // This is a simplification — a full implementation would query patches between revisions
-    } yield Vector.empty[DiffEntry]
-  }
 }

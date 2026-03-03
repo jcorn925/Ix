@@ -30,7 +30,7 @@ object Routes {
 
     val contextRoutes   = new ContextRoutes(contextService).routes
     val ingestionRoutes = new IngestionRoutes(ingestionService).routes
-    val entityRoutes    = new EntityRoutes(queryApi, client).routes
+    val entityRoutes    = new EntityRoutes(queryApi).routes
     val diffRoutes      = new DiffRoutes(queryApi).routes
     val conflictRoutes  = new ConflictRoutes(conflictService).routes
 

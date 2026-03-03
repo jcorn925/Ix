@@ -171,6 +171,25 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
       Map("key" -> tenant.value.toString.asInstanceOf[AnyRef])
     ).map(_.flatMap(_.as[Long].toOption).map(Rev(_)).getOrElse(Rev(0L)))
 
+  override def getPatchesForEntity(tenant: TenantId, entityId: NodeId): IO[List[Json]] = {
+    val nodeIdStr = entityId.value.toString
+    client.query(
+      """FOR p IN patches
+        |  FILTER p.tenant == @tenant
+        |  FILTER LENGTH(
+        |    FOR op IN (IS_ARRAY(p.data.ops) ? p.data.ops : [])
+        |      FILTER op.id == @nodeId OR op.entityId == @nodeId
+        |      RETURN 1
+        |  ) > 0
+        |  SORT p.rev ASC
+        |  RETURN p""".stripMargin,
+      Map(
+        "tenant" -> tenant.value.toString.asInstanceOf[AnyRef],
+        "nodeId" -> nodeIdStr.asInstanceOf[AnyRef]
+      )
+    )
+  }
+
   // ── JSON Parsers (snake_case → camelCase) ───────────────────────────
 
   private def parseNode(json: Json): Option[GraphNode] = {

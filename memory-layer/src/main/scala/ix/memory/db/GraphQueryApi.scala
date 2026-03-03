@@ -1,6 +1,7 @@
 package ix.memory.db
 
 import cats.effect.IO
+import io.circe.Json
 import ix.memory.model._
 
 trait GraphQueryApi {
@@ -12,6 +13,7 @@ trait GraphQueryApi {
              asOfRev: Option[Rev] = None): IO[ExpandResult]
   def getClaims(tenant: TenantId, entityId: NodeId): IO[Vector[Claim]]
   def getLatestRev(tenant: TenantId): IO[Rev]
+  def getPatchesForEntity(tenant: TenantId, entityId: NodeId): IO[List[Json]]
 }
 
 sealed trait Direction

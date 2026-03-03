@@ -273,7 +273,91 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers {
     }
   }
 
-  // ── Test 9: POST /v1/provenance/:id returns provenance chain ─────────
+  // ── Test 9: POST /v1/ingest ingests a Python file ─────────────────────
+
+  it should "ingest a Python file and return counts" in {
+    clientResource.use { client =>
+      val writeApi = new ArangoGraphWriteApi(client)
+      val queryApi = new ArangoGraphQueryApi(client)
+      val app      = buildRoutes(client, writeApi, queryApi)
+      val tenant   = TenantId(UUID.randomUUID())
+
+      for {
+        _       <- client.ensureSchema()
+        tmpFile <- IO.blocking {
+          val f = java.nio.file.Files.createTempFile("ix-test-", ".py")
+          java.nio.file.Files.writeString(f,
+            """def hello():
+              |    return "world"
+              |""".stripMargin
+          )
+          f
+        }
+        ingestReq = Json.obj(
+          "path"   -> tmpFile.toAbsolutePath.toString.asJson,
+          "tenant" -> tenant.value.toString.asJson
+        )
+        req     = Request[IO](Method.POST, uri"/v1/ingest").withEntity(ingestReq)
+        resp   <- app.run(req)
+        body   <- resp.as[Json]
+        _      <- IO.blocking(java.nio.file.Files.deleteIfExists(tmpFile))
+      } yield {
+        resp.status shouldBe Status.Ok
+        body.hcursor.get[Int]("filesProcessed").toOption should not be empty
+        body.hcursor.get[Int]("patchesApplied").toOption should not be empty
+        body.hcursor.get[Long]("latestRev").toOption should not be empty
+      }
+    }
+  }
+
+  // ── Test 10: POST /v1/ingest rejects path traversal ────────────────
+
+  it should "return 400 for path traversal attempt" in {
+    clientResource.use { client =>
+      val writeApi = new ArangoGraphWriteApi(client)
+      val queryApi = new ArangoGraphQueryApi(client)
+      val app      = buildRoutes(client, writeApi, queryApi)
+      val tenant   = TenantId(UUID.randomUUID())
+
+      for {
+        _    <- client.ensureSchema()
+        ingestReq = Json.obj(
+          "path"   -> "/tmp/../etc/passwd".asJson,
+          "tenant" -> tenant.value.toString.asJson
+        )
+        req   = Request[IO](Method.POST, uri"/v1/ingest").withEntity(ingestReq)
+        resp <- app.run(req)
+      } yield {
+        resp.status shouldBe Status.BadRequest
+      }
+    }
+  }
+
+  // ── Test 11: POST /v1/diff returns 422 without entityId ─────────────
+
+  it should "return 422 for diff without entityId" in {
+    clientResource.use { client =>
+      val writeApi = new ArangoGraphWriteApi(client)
+      val queryApi = new ArangoGraphQueryApi(client)
+      val app      = buildRoutes(client, writeApi, queryApi)
+      val tenant   = TenantId(UUID.randomUUID())
+
+      for {
+        _    <- client.ensureSchema()
+        diffReq = Json.obj(
+          "tenant"  -> tenant.value.toString.asJson,
+          "fromRev" -> 0L.asJson,
+          "toRev"   -> 1L.asJson
+        )
+        req   = Request[IO](Method.POST, uri"/v1/diff").withEntity(diffReq)
+        resp <- app.run(req)
+      } yield {
+        resp.status shouldBe Status.UnprocessableEntity
+      }
+    }
+  }
+
+  // ── Test 12: POST /v1/provenance/:id returns provenance chain ─────────
 
   it should "return provenance chain for entity" in {
     clientResource.use { client =>
