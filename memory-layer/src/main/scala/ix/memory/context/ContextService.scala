@@ -31,13 +31,16 @@ class ContextService(
       allNodeIds = (seeds.map(_.id) ++ expanded.nodes.map(_.id)).distinct
       claims <- claimCollector.collect(allNodeIds)
 
+      // 4.5. Detect stale sources
+      stalenessMap <- StalenessDetector.detect(claims)
+
       // 5. Score each claim for confidence
       rev <- asOfRev.fold(queryApi.getLatestRev)(IO.pure)
       corroborationMap = CorroborationCounter.count(claims)
       scored = claims.map { c =>
         confidenceScorer.score(c, ScoringContext(
           latestRev          = rev,
-          sourceChanged      = false,
+          sourceChanged      = stalenessMap.getOrElse(c.id, false),
           corroboratingCount = corroborationMap.getOrElse(c.id, 0),
           conflictState      = ConflictState.NoConflict,
           intentAlignment    = IntentAlignment.NoConnection,
