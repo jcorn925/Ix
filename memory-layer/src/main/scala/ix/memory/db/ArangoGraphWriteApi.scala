@@ -74,6 +74,8 @@ class ArangoGraphWriteApi(client: ArangoClient) extends GraphWriteApi {
           for {
             // Step 5: Execute each op
             _ <- patch.ops.traverse_(op => executeOp(op, patch, newRev, txId))
+            // Step 5b: Retire absent claims (claims from same extractor/entity no longer emitted)
+            _ <- retireAbsentClaims(patch, newRev, txId)
             // Step 6: Store patch
             _ <- storePatch(patch, newRev, txId)
             // Step 7: Store idempotency key
@@ -258,32 +260,42 @@ class ArangoGraphWriteApi(client: ArangoClient) extends GraphWriteApi {
       )
 
     case PatchOp.AssertClaim(entityId, field, value, confidence) =>
-      val claimKey = UUID.randomUUID().toString
       val provenanceJson = buildProvenance(patch)
-      client.execute(
-        """INSERT {
-          |  _key: @key,
-          |  entity_id: @entity_id,
-          |  field: @field,
-          |  value: @value,
-          |  confidence: @confidence,
-          |  status: @status,
-          |  created_rev: @created_rev,
-          |  deleted_rev: null,
-          |  provenance: @provenance
-          |} INTO claims""".stripMargin,
-        Map(
-          "key"         -> claimKey.asInstanceOf[AnyRef],
-          "entity_id"   -> entityId.value.toString.asInstanceOf[AnyRef],
-          "field"       -> field.asInstanceOf[AnyRef],
-          "value"       -> jsonToJava(value).asInstanceOf[AnyRef],
-          "confidence"  -> confidence.map(Double.box).orNull.asInstanceOf[AnyRef],
-          "status"      -> "active".asInstanceOf[AnyRef],
-          "created_rev" -> Long.box(newRev).asInstanceOf[AnyRef],
-          "provenance"  -> parseToJavaMap(provenanceJson.noSpaces).asInstanceOf[AnyRef]
-        ),
-        txId = Some(txId)
-      )
+      for {
+        // Step 1: Retire active claims for same (entity_id, field) with different value
+        _ <- retireClaims(entityId.value.toString, field, value, newRev, txId)
+        // Step 2: Check if identical active claim already exists
+        hasDuplicate <- hasIdenticalActiveClaim(entityId.value.toString, field, value, txId)
+        // Step 3: Only insert if no duplicate
+        _ <- if (hasDuplicate) IO.unit
+             else {
+               val claimKey = UUID.randomUUID().toString
+               client.execute(
+                 """INSERT {
+                   |  _key: @key,
+                   |  entity_id: @entity_id,
+                   |  field: @field,
+                   |  value: @value,
+                   |  confidence: @confidence,
+                   |  status: @status,
+                   |  created_rev: @created_rev,
+                   |  deleted_rev: null,
+                   |  provenance: @provenance
+                   |} INTO claims""".stripMargin,
+                 Map(
+                   "key"         -> claimKey.asInstanceOf[AnyRef],
+                   "entity_id"   -> entityId.value.toString.asInstanceOf[AnyRef],
+                   "field"       -> field.asInstanceOf[AnyRef],
+                   "value"       -> jsonToJava(value).asInstanceOf[AnyRef],
+                   "confidence"  -> confidence.map(Double.box).orNull.asInstanceOf[AnyRef],
+                   "status"      -> "active".asInstanceOf[AnyRef],
+                   "created_rev" -> Long.box(newRev).asInstanceOf[AnyRef],
+                   "provenance"  -> parseToJavaMap(provenanceJson.noSpaces).asInstanceOf[AnyRef]
+                 ),
+                 txId = Some(txId)
+               )
+             }
+      } yield ()
 
     case PatchOp.RetractClaim(claimId) =>
       client.execute(
@@ -343,6 +355,82 @@ class ArangoGraphWriteApi(client: ArangoClient) extends GraphWriteApi {
       ),
       txId = Some(txId)
     )
+
+  /** Retire active claims for the same (entity_id, field) that have a different value. */
+  private def retireClaims(entityId: String, field: String, value: Json, newRev: Long, txId: String): IO[Unit] =
+    client.execute(
+      """FOR c IN claims
+        |  FILTER c.entity_id == @entity_id
+        |    AND c.field == @field
+        |    AND c.deleted_rev == null
+        |    AND c.value != @value
+        |  UPDATE c WITH { status: "retracted", deleted_rev: @deleted_rev } IN claims""".stripMargin,
+      Map(
+        "entity_id"   -> entityId.asInstanceOf[AnyRef],
+        "field"       -> field.asInstanceOf[AnyRef],
+        "value"       -> jsonToJava(value).asInstanceOf[AnyRef],
+        "deleted_rev" -> Long.box(newRev).asInstanceOf[AnyRef]
+      ),
+      txId = Some(txId)
+    )
+
+  /** Check if an identical active claim already exists (same entity, field, value). */
+  private def hasIdenticalActiveClaim(entityId: String, field: String, value: Json, txId: String): IO[Boolean] =
+    client.queryOne(
+      """FOR c IN claims
+        |  FILTER c.entity_id == @entity_id
+        |    AND c.field == @field
+        |    AND c.value == @value
+        |    AND c.deleted_rev == null
+        |  LIMIT 1
+        |  RETURN 1""".stripMargin,
+      Map(
+        "entity_id" -> entityId.asInstanceOf[AnyRef],
+        "field"     -> field.asInstanceOf[AnyRef],
+        "value"     -> jsonToJava(value).asInstanceOf[AnyRef]
+      ),
+      txId = Some(txId)
+    ).map(_.isDefined)
+
+  /**
+   * After all ops execute, retire claims from the same extractor/entity that are
+   * no longer emitted (the "absent claims" policy). This handles the case where
+   * a re-parsed file no longer contains a previously asserted claim.
+   */
+  private def retireAbsentClaims(patch: GraphPatch, newRev: Long, txId: String): IO[Unit] = {
+    val assertedClaims = patch.ops.collect {
+      case PatchOp.AssertClaim(entityId, field, _, _) => (entityId.value.toString, field)
+    }
+
+    if (assertedClaims.isEmpty) IO.unit
+    else {
+      val fieldsByEntity: Map[String, Set[String]] = assertedClaims
+        .groupBy(_._1)
+        .map { case (eid, pairs) => eid -> pairs.map(_._2).toSet }
+
+      val extractor = patch.source.extractor
+
+      fieldsByEntity.toVector.traverse_ { case (entityId, fields) =>
+        val fieldList = new java.util.ArrayList[String]()
+        fields.foreach(fieldList.add)
+        client.execute(
+          """FOR c IN claims
+            |  FILTER c.entity_id == @entity_id
+            |    AND c.field NOT IN @fields
+            |    AND c.deleted_rev == null
+            |    AND c.provenance.extractor == @extractor
+            |  UPDATE c WITH { status: "retracted", deleted_rev: @deleted_rev } IN claims""".stripMargin,
+          Map(
+            "entity_id"   -> entityId.asInstanceOf[AnyRef],
+            "fields"      -> fieldList.asInstanceOf[AnyRef],
+            "extractor"   -> extractor.asInstanceOf[AnyRef],
+            "deleted_rev" -> Long.box(newRev).asInstanceOf[AnyRef]
+          ),
+          txId = Some(txId)
+        )
+      }
+    }
+  }
 
   private def buildProvenance(patch: GraphPatch): Json =
     Json.obj(

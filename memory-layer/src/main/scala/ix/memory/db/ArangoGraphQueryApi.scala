@@ -47,9 +47,35 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
 
   override def searchNodes(text: String, limit: Int = 20): IO[Vector[GraphNode]] =
     client.query(
-      """FOR n IN nodes
-        |  FILTER CONTAINS(LOWER(n.name), LOWER(@text))
-        |    AND n.deleted_rev == null
+      """LET name_matches = (
+        |  FOR n IN nodes
+        |    FILTER CONTAINS(LOWER(n.name), LOWER(@text))
+        |      AND n.deleted_rev == null
+        |    RETURN DISTINCT n.logical_id
+        |)
+        |
+        |LET provenance_matches = (
+        |  FOR n IN nodes
+        |    FILTER CONTAINS(LOWER(n.provenance.source_uri), LOWER(@text))
+        |      AND n.deleted_rev == null
+        |    RETURN DISTINCT n.logical_id
+        |)
+        |
+        |LET claim_matches = (
+        |  FOR c IN claims
+        |    FILTER c.deleted_rev == null
+        |      AND (
+        |        CONTAINS(LOWER(c.field), LOWER(@text))
+        |        OR CONTAINS(LOWER(TO_STRING(c.value)), LOWER(@text))
+        |      )
+        |    RETURN DISTINCT c.entity_id
+        |)
+        |
+        |LET all_ids = UNION_DISTINCT(name_matches, provenance_matches, claim_matches)
+        |
+        |FOR id IN all_ids
+        |  FOR n IN nodes
+        |    FILTER n.logical_id == id AND n.deleted_rev == null
         |  LIMIT @limit
         |  RETURN n""".stripMargin,
       Map(

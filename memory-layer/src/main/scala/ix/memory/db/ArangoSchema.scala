@@ -49,6 +49,12 @@ object ArangoSchema {
       new PersistentIndexOptions()
     )
 
+    // Indexes — nodes (provenance)
+    nodes.ensurePersistentIndex(
+      java.util.Arrays.asList("provenance.source_uri"),
+      new PersistentIndexOptions().sparse(true)
+    )
+
     // Indexes — claims
     val claims = db.collection("claims")
     claims.ensurePersistentIndex(
@@ -60,7 +66,11 @@ object ArangoSchema {
       new PersistentIndexOptions()
     )
     claims.ensurePersistentIndex(
-      java.util.Arrays.asList("statement"),
+      java.util.Arrays.asList("entity_id", "field", "deleted_rev"),
+      new PersistentIndexOptions()
+    )
+    claims.ensurePersistentIndex(
+      java.util.Arrays.asList("field"),
       new PersistentIndexOptions().sparse(true)
     )
 
