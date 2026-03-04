@@ -18,7 +18,7 @@ case "${1:-up}" in
     ;;
   up|*)
     echo "Building Memory Layer..."
-    (cd memory-layer && sbt assembly 2>&1 | tail -5)
+    sbt "memoryLayer/assembly" 2>&1 | tail -5
     echo "Starting Ix backend..."
     docker compose up -d --build
     echo "Waiting for health checks..."

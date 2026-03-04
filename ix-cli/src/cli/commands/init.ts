@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Command } from "commander";
@@ -43,7 +44,8 @@ export function registerInitCommand(program: Command): void {
   program
     .command("init")
     .description("Initialize Ix in the current project")
-    .action(async () => {
+    .option("--force", "Overwrite existing CLAUDE.md")
+    .action(async (opts: { force?: boolean }) => {
       console.log("Initializing Ix Memory...\n");
 
       // 1. Check backend health
@@ -66,9 +68,20 @@ export function registerInitCommand(program: Command): void {
       );
       console.log("  [ok] Created ~/.ix/config.yaml");
 
-      // 3. Create CLAUDE.md in project root
-      await writeFile("CLAUDE.md", CLAUDE_MD);
-      console.log("  [ok] Created CLAUDE.md");
+      // 3. Create CLAUDE.md in project root (don't overwrite without --force)
+      if (existsSync("CLAUDE.md") && !opts.force) {
+        const existing = await readFile("CLAUDE.md", "utf-8");
+        if (existing.includes("ix_query") || existing.includes("Ix Memory")) {
+          console.log("  [ok] CLAUDE.md already contains Ix rules (use --force to overwrite)");
+        } else {
+          // Append Ix rules to existing CLAUDE.md
+          await writeFile("CLAUDE.md", existing + "\n\n" + CLAUDE_MD);
+          console.log("  [ok] Appended Ix rules to existing CLAUDE.md");
+        }
+      } else {
+        await writeFile("CLAUDE.md", CLAUDE_MD);
+        console.log("  [ok] Created CLAUDE.md");
+      }
 
       console.log("\nIx Memory initialized.");
       console.log("Next: run 'ix ingest ./src --recursive' to ingest your codebase.");
