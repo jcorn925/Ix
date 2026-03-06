@@ -57,7 +57,10 @@ class TypeScriptParser extends Parser {
     val fileEntity = ParsedEntity(
       name      = fileName,
       kind      = NodeKind.File,
-      attrs     = Map("language" -> Json.fromString("typescript")),
+      attrs     = Map(
+        "language" -> Json.fromString("typescript"),
+        "content"  -> Json.fromString(source)
+      ),
       lineStart = 1,
       lineEnd   = lines.length
     )

@@ -63,7 +63,7 @@ object GraphPatchBuilder {
         Vector(PatchOp.AssertClaim(
           entityId   = nodeIdFor(e.name),
           field      = key,
-          value      = Json.fromString(value.noSpaces),
+          value      = value,
           confidence = None
         ))
       }

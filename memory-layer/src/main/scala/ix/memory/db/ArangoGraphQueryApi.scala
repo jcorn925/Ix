@@ -270,6 +270,8 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
                       .flatMap(s => scala.util.Try(UUID.fromString(s)).toOption)
                       .map(NodeId(_))
       field      <- c.get[String]("field").toOption
+      value      = c.downField("value").focus.getOrElse(Json.Null)
+      confidence  = c.get[Double]("confidence").toOption
       statusStr  <- c.get[String]("status").toOption
       status     <- statusStr.toLowerCase match {
                       case "active"    => Some(ClaimStatus.Active)
@@ -280,7 +282,7 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
       provenance <- parseProvenance(c.downField("provenance").focus)
       createdRev <- c.get[Long]("created_rev").toOption.map(Rev(_))
       deletedRev  = c.get[Long]("deleted_rev").toOption.map(Rev(_))
-    } yield Claim(key, entityId, field, status, provenance, createdRev, deletedRev)
+    } yield Claim(key, entityId, field, value, confidence, status, provenance, createdRev, deletedRev)
     if (result.isEmpty) log.warn("Failed to parse claim from JSON: {}", json.noSpaces.take(200))
     result
   }

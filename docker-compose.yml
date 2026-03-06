@@ -7,12 +7,6 @@ services:
       ARANGO_NO_AUTH: "1"
     volumes:
       - arangodb-data:/var/lib/arangodb3
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8529/_api/version"]
-      interval: 5s
-      timeout: 3s
-      start_period: 10s
-      retries: 5
 
   memory-layer:
     build: ./memory-layer
@@ -28,8 +22,7 @@ services:
       ARANGO_PASSWORD: ""
       PORT: "8090"
     depends_on:
-      arangodb:
-        condition: service_healthy
+      - arangodb
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8090/v1/health"]
       interval: 10s

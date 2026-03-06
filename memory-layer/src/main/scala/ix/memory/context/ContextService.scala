@@ -18,6 +18,25 @@ class ContextService(
             asOfRev: Option[Rev] = None,
             depth: Option[String] = None): IO[StructuredContext] =
     for {
+      // 0. Resolve revision + depth (used for scoring + output shaping)
+      rev <- asOfRev.fold(queryApi.getLatestRev)(IO.pure)
+      // Normalize depth values coming from different clients:
+      // - MCP server may send shallow|deep
+      // - CLI may send compact|standard|full
+      effectiveDepthRaw = depth.getOrElse("standard").toLowerCase
+      effectiveDepth = effectiveDepthRaw match {
+        case "shallow" => "compact"
+        case "deep"    => "full"
+        case other      => other
+      }
+
+      // Strict limits to prevent huge MCP payloads
+      (claimLimit, nodeLimit, edgeLimit, conflictLimit) = effectiveDepth match {
+        case "compact" => (8, 8, 10, 3)
+        case "full"    => (250, 200, 800, 100)
+        case _          => (30, 40, 120, 15) // standard
+      }
+
       // 1. Extract entity keywords from the natural language query
       terms <- IO.pure(EntityExtractor.extract(question))
 
@@ -35,7 +54,6 @@ class ContextService(
       stalenessMap <- StalenessDetector.detect(claims)
 
       // 5. Score each claim for confidence
-      rev <- asOfRev.fold(queryApi.getLatestRev)(IO.pure)
       corroborationMap = CorroborationCounter.count(claims)
       scored = claims.map { c =>
         confidenceScorer.score(c, ScoringContext(
@@ -48,39 +66,63 @@ class ContextService(
         ))
       }
 
-      // 6. Detect conflicts among scored claims (Pass 1+2)
-      pass12Conflicts = conflictDetector.detect(scored)
-
-      // 6.5. Refine conflicts with LLM (Pass 3, if available)
-      conflicts <- conflictDetector match {
-        case impl: ConflictDetectorImpl => impl.refineWithLlm(pass12Conflicts, scored)
-        case _ => IO.pure(pass12Conflicts)
-      }
-
       // 7. Relevance score: weight claims by hop distance from seeds
       relevant = RelevanceScorer.score(scored, seeds.map(_.id).toSet, expanded.edges)
 
       // 8. Rank claims by finalScore (relevance x confidence) descending
       ranked = ContextRanker.rank(relevant)
 
-      // Collect decisions and intents from expanded nodes
-      allNodes = (seeds ++ expanded.nodes).distinctBy(_.id)
-      decisions = allNodes.filter(_.kind == NodeKind.Decision).map(toDecisionReport(_, rev))
-      intents   = allNodes.filter(_.kind == NodeKind.Intent).map(toIntentReport)
+      // 8.5 Trim claims to strict limit (prevents massive MCP responses)
+      rankedTrimmed = ranked.take(claimLimit)
+
+      // 9. Detect conflicts only within the trimmed claim set
+      pass12Conflicts = conflictDetector.detect(rankedTrimmed.toVector)
+
+      // 9.5 Refine conflicts with LLM (Pass 3, if available) using the same trimmed claims
+      conflictsAll <- conflictDetector match {
+        case impl: ConflictDetectorImpl => impl.refineWithLlm(pass12Conflicts, rankedTrimmed.toVector)
+        case _ => IO.pure(pass12Conflicts)
+      }
+
+      // Only surface hard conflicts in query responses.
+      // Heuristic "Potential inconsistency" reports are too noisy for MCP/LLM output.
+      hardConflictsOnly: Vector[ConflictReport] = conflictsAll.filterNot(_.reason.startsWith("Potential inconsistency"))
+      conflictsTrimmed: Vector[ConflictReport] = hardConflictsOnly.take(conflictLimit)
+
+      // Collect decisions and intents from expanded nodes (apply strict node/edge limits)
+      allNodesAll: Vector[GraphNode] = (seeds ++ expanded.nodes).distinctBy(_.id)
+      allNodes: Vector[GraphNode] = allNodesAll.take(nodeLimit)
+      edgesTrimmed: Vector[GraphEdge] = expanded.edges.take(edgeLimit)
+
+      // Lightweight summaries for LLM navigation (lets the model drill down with ix_entity/ix_expand)
+      nodeSummaries: Vector[NodeSummary] = allNodes.map { n =>
+        val display = n.attrs.hcursor.get[String]("name").getOrElse(n.id.value.toString)
+        NodeSummary(n.id, n.kind, display, rev)
+      }
+      edgeSummaries: Vector[EdgeSummary] = edgesTrimmed.map(e => EdgeSummary(e.id, e.src, e.dst, e.predicate, rev))
+
+      // In compact/standard, omit full nodes/edges to keep MCP payload small.
+      nodesOut: Vector[GraphNode] = if (effectiveDepth == "full") allNodes else Vector.empty
+      edgesOut: Vector[GraphEdge] = if (effectiveDepth == "full") edgesTrimmed else Vector.empty
+
+      decisions: Vector[DecisionReport] = allNodes.filter(_.kind == NodeKind.Decision).map(toDecisionReport(_, rev))
+      intents: Vector[IntentReport] = allNodes.filter(_.kind == NodeKind.Intent).map(toIntentReport)
 
     } yield StructuredContext(
-      claims    = ranked.toList,
-      conflicts = conflicts.toList,
-      decisions = decisions.toList,
-      intents   = intents.toList,
-      nodes     = allNodes.toList,
-      edges     = expanded.edges.toList,
-      metadata  = ContextMetadata(
+      claims         = rankedTrimmed.toList,
+      conflicts      = conflictsTrimmed.toList,
+      decisions      = decisions.toList,
+      intents        = intents.toList,
+      nodes          = nodesOut.toList,
+      edges          = edgesOut.toList,
+      nodeSummaries  = nodeSummaries.toList,
+      edgeSummaries  = edgeSummaries.toList,
+      metadata       = ContextMetadata(
         query        = question,
-        seedEntities = seeds.map(_.id).toList,
+        seedEntities = seeds.map(_.id).take(25).toList,
         hopsExpanded = 1,
         asOfRev      = rev,
-        depth        = depth.orElse(Some("standard"))
+        depth        = Some(effectiveDepthRaw)
       )
     )
 

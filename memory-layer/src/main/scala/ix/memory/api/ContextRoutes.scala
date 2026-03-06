@@ -10,7 +10,7 @@ import org.http4s.dsl.io._
 import ix.memory.context.ContextService
 import ix.memory.model.Rev
 
-case class ContextRequest(query: String, asOfRev: Option[Long])
+case class ContextRequest(query: String, asOfRev: Option[Long], depth: Option[String])
 
 object ContextRequest {
   implicit val decoder: Decoder[ContextRequest] = deriveDecoder[ContextRequest]
@@ -24,7 +24,7 @@ class ContextRoutes(contextService: ContextService) {
       (for {
         body     <- req.as[ContextRequest]
         asOfRev   = body.asOfRev.map(Rev(_))
-        result   <- contextService.query(body.query, asOfRev)
+        result   <- contextService.query(body.query, asOfRev, depth = body.depth)
         resp     <- Ok(result)
       } yield resp).handleErrorWith(ErrorHandler.handle(_))
   }

@@ -13,6 +13,7 @@ export class IxClient {
     question: string,
     opts?: { asOfRev?: number; depth?: string }
   ): Promise<StructuredContext> {
+    console.log("CLI depth:", opts?.depth);
     return this.post("/v1/context", { query: question, ...opts });
   }
 

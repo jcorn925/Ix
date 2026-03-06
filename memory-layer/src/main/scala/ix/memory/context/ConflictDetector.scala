@@ -31,23 +31,50 @@ class ConflictDetectorImpl(llmJudge: Option[LlmJudge] = None) extends ConflictDe
 
       if (activeClaims.size < 2) Vector.empty
       else {
-        val pairs = activeClaims.combinations(2).toVector
-        val conflicts = pairs.flatMap {
-          case Vector(a, b) =>
-            if (a.claim.statement == b.claim.statement) {
-              None
-            }
-            else if (shareFieldPrefix(a.claim.statement, b.claim.statement)) {
-              Some(makeConflict(a, b, "Contradictory statements (same field)"))
-            }
-            else if (keywordsOverlap(a.claim.statement, b.claim.statement)) {
-              Some(makeConflict(a, b, "Contradictory statements (keyword overlap)"))
-            }
+        // PASS 1: Hard conflicts (same statement/field, different values)
+        val hardConflicts: Vector[ConflictReport] = {
+          val byStatement = activeClaims.groupBy(_.claim.statement)
+
+          byStatement.values.toVector.flatMap { sameFieldClaims =>
+            // Group by value (stringified) to find distinct values for this field
+            val byValue = sameFieldClaims.groupBy(sc => sc.claim.value.noSpaces)
+            if (byValue.size <= 1) Vector.empty
             else {
-              None // unrelated claims — not a conflict
+              // Pick one representative claim per distinct value (highest confidence wins)
+              val reps = byValue.values.toVector.map { claimsForValue =>
+                claimsForValue.maxBy(_.confidence.score)
+              }
+              val winner = reps.maxBy(_.confidence.score)
+
+              // Emit one conflict per losing value against the winner
+              reps.filterNot(_.claim.id == winner.claim.id).map { loser =>
+                makeConflict(winner, loser, "Conflicting values for same field")
+              }
             }
-          case _ => None
-        }.take(10)
+          }
+        }
+
+        // PASS 2: Soft conflicts (heuristics) only if we found no hard conflicts.
+        // These are useful for surfacing potential inconsistencies, but can be noisy.
+        val softConflicts: Vector[ConflictReport] =
+          if (hardConflicts.nonEmpty) Vector.empty
+          else {
+            val candidates = activeClaims.filter(sc => sc.relevance >= 0.25)
+            val pairs = candidates.combinations(2).toVector
+            pairs.flatMap {
+              case Vector(a, b) =>
+                if (shareFieldPrefix(a.claim.statement, b.claim.statement)) {
+                  Some(makeConflict(a, b, "Potential inconsistency (same field prefix)"))
+                }
+                else if (keywordsOverlap(a.claim.statement, b.claim.statement)) {
+                  Some(makeConflict(a, b, "Potential inconsistency (keyword overlap)"))
+                }
+                else None
+              case _ => None
+            }
+          }
+
+        val conflicts = (hardConflicts ++ softConflicts).take(10)
 
         if (conflicts.nonEmpty) {
           log.warn("Detected {} conflict(s) for entity {}", conflicts.size, entityClaims.head.claim.entityId.value)

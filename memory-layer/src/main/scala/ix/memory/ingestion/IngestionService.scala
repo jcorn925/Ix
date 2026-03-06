@@ -5,7 +5,8 @@ import java.nio.file.{Files, Path}
 import cats.effect.IO
 import cats.syntax.all._
 import ix.memory.db.{CommitResult, GraphQueryApi, GraphWriteApi}
-import ix.memory.model.{PatchId, Rev}
+import ix.memory.model.{NodeKind, PatchId, Rev}
+import io.circe.Json
 
 /**
  * Orchestrates file ingestion: reads source files, parses them,
@@ -18,26 +19,26 @@ class IngestionService(parserRouter: ParserRouter, writeApi: GraphWriteApi, quer
    */
   def ingestFile(filePath: Path): IO[CommitResult] = {
     for {
+      bytes <- IO.blocking(Files.readAllBytes(filePath))
+      // Hash raw bytes so revisions are stable across encodings
+      hash = Some(sha256Bytes(bytes))
+      // Decode text with UTF-8, fallback to ISO-8859-1 to avoid hard failures
       source <- IO.blocking {
-        val s = scala.io.Source.fromFile(filePath.toFile)
-        try s.mkString finally s.close()
+        try new String(bytes, java.nio.charset.StandardCharsets.UTF_8)
+        catch { case _: Throwable => new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1) }
       }
-      parser <- IO.fromOption(parserRouter.parserFor(filePath.toString))(
-        new IllegalArgumentException(s"No parser for: $filePath")
-      )
-      result  = parser.parse(filePath.getFileName.toString, source)
-      hash    = Some(
-        java.security.MessageDigest.getInstance("SHA-256")
-          .digest(source.getBytes("UTF-8"))
-          .map("%02x".format(_))
-          .mkString
-      )
-      // Check for existing patch from same source+extractor
-      extractor = if (filePath.toString.endsWith(".py")) "tree-sitter-python/1.0"
-                  else if (filePath.toString.endsWith(".ts") || filePath.toString.endsWith(".tsx")) "typescript-parser/1.0"
-                  else if (filePath.toString.endsWith(".json") || filePath.toString.endsWith(".yaml") || filePath.toString.endsWith(".yml") || filePath.toString.endsWith(".toml")) "config-parser/1.0"
-                  else if (filePath.toString.endsWith(".md")) "markdown-parser/1.0"
-                  else "unknown-parser/1.0"
+      // Use the language-specific parser when available; otherwise fall back to generic text
+      parserOpt = parserRouter.parserFor(filePath.toString)
+      result = parserOpt match {
+        case Some(p) => p.parse(filePath.getFileName.toString, source)
+        case None    => genericTextParse(filePath.getFileName.toString, source)
+      }
+      val fp = filePath.toString
+      extractor = if (fp.endsWith(".py")) "tree-sitter-python/1.0"
+                  else if (fp.endsWith(".ts") || fp.endsWith(".tsx")) "typescript-parser/1.0"
+                  else if (fp.endsWith(".json") || fp.endsWith(".yaml") || fp.endsWith(".yml") || fp.endsWith(".toml") || fp.endsWith(".ini") || fp.endsWith(".conf") || fp.endsWith(".properties") || fp.endsWith(".env")) "config-parser/1.0"
+                  else if (fp.endsWith(".md") || fp.endsWith(".mdx") || fp.endsWith(".rst") || fp.endsWith(".txt")) "markdown-parser/1.0"
+                  else "text-parser/1.0"
       existing <- queryApi.getPatchesBySource(filePath.toString, extractor)
       prevPatch = existing.headOption
       prevHash  = prevPatch.flatMap(_.hcursor.downField("data").downField("source").get[String]("sourceHash").toOption)
@@ -97,18 +98,50 @@ class IngestionService(parserRouter: ParserRouter, writeApi: GraphWriteApi, quer
       case Some("typescript") => Set(".ts", ".tsx")
       case Some("config")     => Set(".json", ".yaml", ".yml", ".toml")
       case Some("markdown")   => Set(".md")
-      case _                  => Set(".py", ".ts", ".tsx", ".json", ".yaml", ".yml", ".toml", ".md") // all supported
+      case _ => Set(
+        // code
+        ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+        ".java", ".scala", ".sc", ".go", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp",
+        ".kt", ".kts", ".swift", ".rb", ".php",
+
+        // config / data
+        ".json", ".yaml", ".yml", ".toml", ".ini", ".conf", ".env", ".properties",
+
+        // docs
+        ".md", ".mdx", ".rst", ".txt"
+      )
     }
 
     if (Files.isRegularFile(path)) {
-      if (extensions.exists(ext => path.toString.endsWith(ext))) List(path)
+      val base = path.getFileName.toString
+      val isSpecial = Set(
+        "Dockerfile",
+        "Makefile",
+        "README",
+        "LICENSE",
+        "NOTICE",
+        "build.sbt"
+      ).contains(base)
+      if (isSpecial || extensions.exists(ext => base.endsWith(ext))) List(path)
       else List.empty
     } else if (Files.isDirectory(path)) {
       val stream = if (recursive) Files.walk(path) else Files.list(path)
       try {
         stream.iterator().asScala
           .filter(p => Files.isRegularFile(p))
-          .filter(p => extensions.exists(ext => p.toString.endsWith(ext)))
+          .filter { p =>
+            val base = p.getFileName.toString
+            val isSpecial = Set(
+              "Dockerfile",
+              "Makefile",
+              "README",
+              "LICENSE",
+              "NOTICE",
+              "build.sbt"
+            ).contains(base)
+            val matchesExt = extensions.exists(ext => base.endsWith(ext))
+            matchesExt || isSpecial
+          }
           .toList
       } finally {
         stream.close()
@@ -116,6 +149,33 @@ class IngestionService(parserRouter: ParserRouter, writeApi: GraphWriteApi, quer
     } else {
       List.empty
     }
+  }
+
+  private def sha256Bytes(bytes: Array[Byte]): String = {
+    val md = java.security.MessageDigest.getInstance("SHA-256")
+    md.digest(bytes).map("%02x".format(_)).mkString
+  }
+
+  /**
+    * Generic fallback parse: ensures every text file produces at least a File entity with content.
+    * This avoids needing a bespoke parser for every dev/text extension.
+    */
+  private def genericTextParse(fileName: String, source: String): ParseResult = {
+    val lines = if (source.isEmpty) 1 else source.count(_ == '\n') + 1
+    ParseResult(
+      entities = Vector(
+        ParsedEntity(
+          name = fileName,
+          kind = NodeKind.File,
+          attrs = Map(
+            "content" -> Json.fromString(source)
+          ),
+          lineStart = 1,
+          lineEnd = lines
+        )
+      ),
+      relationships = Vector.empty
+    )
   }
 }
 

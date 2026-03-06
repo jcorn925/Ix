@@ -67,17 +67,67 @@ object ContextMetadata {
   implicit val decoder: Decoder[ContextMetadata] = deriveDecoder[ContextMetadata]
 }
 
+final case class NodeSummary(
+  id:   NodeId,
+  kind: NodeKind,
+  name: String,
+  rev:  Rev
+)
+
+object NodeSummary {
+  implicit val encoder: Encoder[NodeSummary] = deriveEncoder[NodeSummary]
+  implicit val decoder: Decoder[NodeSummary] = deriveDecoder[NodeSummary]
+}
+
+final case class EdgeSummary(
+  id:        EdgeId,
+  src:       NodeId,
+  dst:       NodeId,
+  predicate: EdgePredicate,
+  rev:       Rev
+)
+
+object EdgeSummary {
+  implicit val encoder: Encoder[EdgeSummary] = deriveEncoder[EdgeSummary]
+  implicit val decoder: Decoder[EdgeSummary] = deriveDecoder[EdgeSummary]
+}
+
 final case class StructuredContext(
-  claims:    List[ScoredClaim],
-  conflicts: List[ConflictReport],
-  decisions: List[DecisionReport],
-  intents:   List[IntentReport],
-  nodes:     List[GraphNode],
-  edges:     List[GraphEdge],
-  metadata:  ContextMetadata
+  claims:        List[ScoredClaim],
+  conflicts:     List[ConflictReport],
+  decisions:     List[DecisionReport],
+  intents:       List[IntentReport],
+  nodes:         List[GraphNode],
+  edges:         List[GraphEdge],
+  nodeSummaries: List[NodeSummary] = Nil,
+  edgeSummaries: List[EdgeSummary] = Nil,
+  metadata:      ContextMetadata
 )
 
 object StructuredContext {
   implicit val encoder: Encoder[StructuredContext] = deriveEncoder[StructuredContext]
-  implicit val decoder: Decoder[StructuredContext] = deriveDecoder[StructuredContext]
+
+  implicit val decoder: Decoder[StructuredContext] = Decoder.instance { c =>
+    for {
+      claims         <- c.getOrElse[List[ScoredClaim]]("claims")(Nil)
+      conflicts      <- c.getOrElse[List[ConflictReport]]("conflicts")(Nil)
+      decisions      <- c.getOrElse[List[DecisionReport]]("decisions")(Nil)
+      intents        <- c.getOrElse[List[IntentReport]]("intents")(Nil)
+      nodes          <- c.getOrElse[List[GraphNode]]("nodes")(Nil)
+      edges          <- c.getOrElse[List[GraphEdge]]("edges")(Nil)
+      nodeSummaries  <- c.getOrElse[List[NodeSummary]]("nodeSummaries")(Nil)
+      edgeSummaries  <- c.getOrElse[List[EdgeSummary]]("edgeSummaries")(Nil)
+      metadata       <- c.get[ContextMetadata]("metadata")
+    } yield StructuredContext(
+      claims = claims,
+      conflicts = conflicts,
+      decisions = decisions,
+      intents = intents,
+      nodes = nodes,
+      edges = edges,
+      nodeSummaries = nodeSummaries,
+      edgeSummaries = edgeSummaries,
+      metadata = metadata
+    )
+  }
 }

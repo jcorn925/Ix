@@ -1,6 +1,6 @@
 package ix.memory.model
 
-import io.circe.{Decoder, Encoder}
+import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 
 sealed trait ClaimStatus
@@ -30,6 +30,8 @@ final case class Claim(
   id:         ClaimId,
   entityId:   NodeId,
   statement:  String,
+  value:      Json,
+  confidence: Option[Double],
   status:     ClaimStatus,
   provenance: Provenance,
   createdRev: Rev,
