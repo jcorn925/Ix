@@ -1,0 +1,220 @@
+package ix.memory.ingestion.parsers
+
+import ix.memory.ingestion.{ParseResult, ParsedEntity, ParsedRelationship}
+import ix.memory.model.NodeKind
+import io.circe.Json
+
+import scala.util.matching.Regex
+
+/**
+ * Regex-based Scala source parser that extracts structural entities and relationships.
+ *
+ * Extracts: traits, classes, case classes, objects, methods (def), and imports.
+ * Uses brace counting for block boundary detection.
+ */
+class ScalaParser {
+
+  // Patterns for Scala constructs
+  private val TraitPattern: Regex      = """^\s*(?:sealed\s+|abstract\s+|private\s+|protected\s+)*trait\s+(\w+)""".r
+  private val ClassPattern: Regex      = """^\s*(?:sealed\s+|abstract\s+|private\s+|protected\s+)*class\s+(\w+)""".r
+  private val CaseClassPattern: Regex  = """^\s*(?:sealed\s+|abstract\s+|private\s+|protected\s+)*case\s+class\s+(\w+)""".r
+  private val ObjectPattern: Regex     = """^\s*(?:sealed\s+|abstract\s+|private\s+|protected\s+)*(?:case\s+)?object\s+(\w+)""".r
+  private val DefPattern: Regex        = """^\s*(?:override\s+)?(?:private(?:\[\w+\])?\s+|protected(?:\[\w+\])?\s+)?(?:final\s+)?def\s+(\w+)""".r
+  private val ImportPattern: Regex     = """^\s*import\s+(.+)$""".r
+
+  def parse(fileName: String, source: String): ParseResult = {
+    val lines = source.split("\n", -1)
+
+    val fileEntity = ParsedEntity(
+      name      = fileName,
+      kind      = NodeKind.File,
+      attrs     = Map("language" -> Json.fromString("scala")),
+      lineStart = 1,
+      lineEnd   = lines.length
+    )
+
+    var entities      = Vector(fileEntity)
+    var relationships = Vector.empty[ParsedRelationship]
+
+    // Track type ranges for containment: (name, startLine, endLine)
+    var typeRanges = Vector.empty[(String, Int, Int)]
+
+    for ((line, idx) <- lines.zipWithIndex) {
+      val lineNum = idx + 1
+      val trimmed = line.trim
+
+      // Skip comment lines
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+        // no-op
+      } else {
+
+        // Case class must be checked before class (since "case class" contains "class")
+        val handledAsType = CaseClassPattern.findFirstMatchIn(line) match {
+          case Some(m) =>
+            val name = m.group(1)
+            val endLine = findBraceBlockEnd(lines, idx).getOrElse(lineNum)
+            entities = entities :+ ParsedEntity(
+              name      = name,
+              kind      = NodeKind.Class,
+              attrs     = Map("scala_kind" -> Json.fromString("case_class"), "language" -> Json.fromString("scala")),
+              lineStart = lineNum,
+              lineEnd   = endLine
+            )
+            relationships = relationships :+ ParsedRelationship(fileName, name, "DEFINES")
+            typeRanges = typeRanges :+ (name, lineNum, endLine)
+            true
+
+          case None =>
+            // Check for trait
+            TraitPattern.findFirstMatchIn(line) match {
+              case Some(m) =>
+                val name = m.group(1)
+                val endLine = findBraceBlockEnd(lines, idx).getOrElse(lineNum)
+                entities = entities :+ ParsedEntity(
+                  name      = name,
+                  kind      = NodeKind.Class,
+                  attrs     = Map("scala_kind" -> Json.fromString("trait"), "language" -> Json.fromString("scala")),
+                  lineStart = lineNum,
+                  lineEnd   = endLine
+                )
+                relationships = relationships :+ ParsedRelationship(fileName, name, "DEFINES")
+                typeRanges = typeRanges :+ (name, lineNum, endLine)
+                true
+
+              case None =>
+                // Check for object (before class, since object keyword won't match class pattern)
+                ObjectPattern.findFirstMatchIn(line) match {
+                  case Some(m) =>
+                    val name = m.group(1)
+                    val endLine = findBraceBlockEnd(lines, idx).getOrElse(lineNum)
+                    entities = entities :+ ParsedEntity(
+                      name      = name,
+                      kind      = NodeKind.Class,
+                      attrs     = Map("scala_kind" -> Json.fromString("object"), "language" -> Json.fromString("scala")),
+                      lineStart = lineNum,
+                      lineEnd   = endLine
+                    )
+                    relationships = relationships :+ ParsedRelationship(fileName, name, "DEFINES")
+                    typeRanges = typeRanges :+ (name, lineNum, endLine)
+                    true
+
+                  case None =>
+                    // Check for class
+                    ClassPattern.findFirstMatchIn(line) match {
+                      case Some(m) =>
+                        val name = m.group(1)
+                        val endLine = findBraceBlockEnd(lines, idx).getOrElse(lineNum)
+                        entities = entities :+ ParsedEntity(
+                          name      = name,
+                          kind      = NodeKind.Class,
+                          attrs     = Map("scala_kind" -> Json.fromString("class"), "language" -> Json.fromString("scala")),
+                          lineStart = lineNum,
+                          lineEnd   = endLine
+                        )
+                        relationships = relationships :+ ParsedRelationship(fileName, name, "DEFINES")
+                        typeRanges = typeRanges :+ (name, lineNum, endLine)
+                        true
+                      case None => false
+                    }
+                }
+            }
+        }
+
+        // Check for def (only if we didn't match a type on this line)
+        if (!handledAsType) {
+          DefPattern.findFirstMatchIn(line).foreach { m =>
+            val funcName = m.group(1)
+            val endLine = findBraceBlockEnd(lines, idx).getOrElse(lineNum)
+
+            // Build summary from the first line of the signature, truncated to 120 chars
+            val sigLine = trimmed.take(120)
+            val summary = sigLine
+
+            entities = entities :+ ParsedEntity(
+              name      = funcName,
+              kind      = NodeKind.Function,
+              attrs     = Map(
+                "language" -> Json.fromString("scala"),
+                "summary"  -> Json.fromString(summary)
+              ),
+              lineStart = lineNum,
+              lineEnd   = endLine
+            )
+
+            // Determine enclosing type
+            val enclosing = typeRanges.find { case (_, start, end) =>
+              lineNum > start && lineNum <= end
+            }
+            enclosing match {
+              case Some((typeName, _, _)) =>
+                relationships = relationships :+ ParsedRelationship(typeName, funcName, "DEFINES")
+              case None =>
+                relationships = relationships :+ ParsedRelationship(fileName, funcName, "DEFINES")
+            }
+          }
+        }
+
+        // Check for imports
+        ImportPattern.findFirstMatchIn(line).foreach { m =>
+          val importPath = m.group(1).trim
+          // Parse import path: "ix.memory.model.{Claim, GraphNode}" -> module "ix.memory.model"
+          // "cats.effect.IO" -> module "cats.effect.IO"
+          val moduleName = if (importPath.contains("{")) {
+            // Grouped import: take the prefix before the braces
+            importPath.substring(0, importPath.indexOf('{')).stripSuffix(".").trim
+          } else {
+            importPath
+          }
+
+          // Avoid duplicate module entities
+          if (!entities.exists(e => e.name == moduleName && e.kind == NodeKind.Module)) {
+            entities = entities :+ ParsedEntity(
+              name      = moduleName,
+              kind      = NodeKind.Module,
+              attrs     = Map.empty,
+              lineStart = lineNum,
+              lineEnd   = lineNum
+            )
+          }
+          relationships = relationships :+ ParsedRelationship(fileName, moduleName, "IMPORTS")
+        }
+
+      } // end else (non-comment)
+    }
+
+    ParseResult(entities, relationships)
+  }
+
+  /**
+   * Find the end of a brace-delimited block starting at `startIdx`.
+   * Counts opening and closing braces. Returns None if no opening brace is found
+   * (e.g. abstract method in a trait with no body).
+   */
+  private def findBraceBlockEnd(lines: Array[String], startIdx: Int): Option[Int] = {
+    var braceCount = 0
+    var foundOpen = false
+    var i = startIdx
+
+    while (i < lines.length) {
+      val line = lines(i)
+      for (ch <- line) {
+        ch match {
+          case '{' =>
+            braceCount += 1
+            foundOpen = true
+          case '}' =>
+            braceCount -= 1
+            if (foundOpen && braceCount == 0) {
+              return Some(i + 1) // 1-indexed
+            }
+          case _ => // skip
+        }
+      }
+      // If we found an opening brace and closed it, we'd have returned above
+      // If line ends and no brace found yet, keep going
+      i += 1
+    }
+
+    if (foundOpen) Some(lines.length) else None
+  }
+}
