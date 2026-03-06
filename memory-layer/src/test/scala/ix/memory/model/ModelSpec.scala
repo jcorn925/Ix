@@ -278,4 +278,35 @@ class ModelSpec extends AnyFlatSpec with Matchers {
     compact.nonTrivialFactors should have size 2
     compact.nonTrivialFactors.map(_._1) should contain allOf ("recency", "corroboration")
   }
+
+  // ── CompactScoredClaim ────────────────────────────────────────────
+
+  "ScoredClaim" should "produce compact scored claim with summary fields" in {
+    import java.time.Instant
+    val claim = Claim(
+      id = ClaimId(UUID.randomUUID()),
+      entityId = NodeId(UUID.randomUUID()),
+      statement = "content",
+      value = Json.fromString("a very long content blob that should not appear in compact mode but this is just test data"),
+      confidence = Some(0.9),
+      status = ClaimStatus.Active,
+      provenance = Provenance("src/main/Foo.scala", Some("abc123"), "tree-sitter/1.0", SourceType.Code, Instant.now()),
+      createdRev = Rev(1L),
+      deletedRev = None
+    )
+    val breakdown = ConfidenceBreakdown(
+      baseAuthority = Factor(0.9, "Code"),
+      verification = Factor(1.0, "n/a"),
+      recency = Factor(1.0, "fresh"),
+      corroboration = Factor(1.0, "single"),
+      conflictPenalty = Factor(1.0, "none"),
+      intentAlignment = Factor(1.0, "none")
+    )
+    val scored = ScoredClaim(claim, breakdown, 1.0, 0.9)
+    val compact = scored.toCompact
+    compact.entityId shouldBe claim.entityId
+    compact.field shouldBe "content"
+    compact.score shouldBe 0.9
+    compact.path shouldBe Some("src/main/Foo.scala")
+  }
 }

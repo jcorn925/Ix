@@ -108,8 +108,19 @@ class ContextService(
       decisions: Vector[DecisionReport] = allNodes.filter(_.kind == NodeKind.Decision).map(toDecisionReport(_, rev))
       intents: Vector[IntentReport] = allNodes.filter(_.kind == NodeKind.Intent).map(toIntentReport)
 
+      // Shape claims and compactClaims based on depth
+      claimsOut: List[ScoredClaim] = effectiveDepth match {
+        case "compact" => Nil
+        case _         => rankedTrimmed.toList
+      }
+      compactClaimsOut: List[CompactScoredClaim] = effectiveDepth match {
+        case "full" => Nil
+        case _      => rankedTrimmed.map(_.toCompact).toList
+      }
+
     } yield StructuredContext(
-      claims         = rankedTrimmed.toList,
+      claims         = claimsOut,
+      compactClaims  = compactClaimsOut,
       conflicts      = conflictsTrimmed.toList,
       decisions      = decisions.toList,
       intents        = intents.toList,
