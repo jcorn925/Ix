@@ -135,16 +135,41 @@ class BulkIngestionService(
       if (specialFiles.contains(base) || extensions.exists(base.endsWith)) List(path)
       else List.empty
     } else if (Files.isDirectory(path)) {
-      val stream = if (recursive) Files.walk(path) else Files.list(path)
-      try {
-        stream.iterator().asScala
-          .filter(Files.isRegularFile(_))
-          .filter { p =>
-            val base = p.getFileName.toString
-            specialFiles.contains(base) || extensions.exists(base.endsWith)
+      if (recursive) {
+        val ignoredDirs = Set(
+          "node_modules", ".git", "target", "dist", "build", ".next",
+          "__pycache__", ".tox", ".venv", "venv", ".mypy_cache",
+          ".gradle", ".idea", ".vscode", ".settings", "out",
+          ".cache", ".parcel-cache", "coverage", ".nyc_output"
+        )
+        val result = scala.collection.mutable.ListBuffer.empty[Path]
+        Files.walkFileTree(path, new java.nio.file.SimpleFileVisitor[Path] {
+          override def preVisitDirectory(dir: Path, attrs: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult = {
+            if (dir != path && ignoredDirs.contains(dir.getFileName.toString))
+              java.nio.file.FileVisitResult.SKIP_SUBTREE
+            else
+              java.nio.file.FileVisitResult.CONTINUE
           }
-          .toList
-      } finally stream.close()
+          override def visitFile(file: Path, attrs: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult = {
+            val base = file.getFileName.toString
+            if (specialFiles.contains(base) || extensions.exists(base.endsWith))
+              result += file
+            java.nio.file.FileVisitResult.CONTINUE
+          }
+        })
+        result.toList
+      } else {
+        val stream = Files.list(path)
+        try {
+          stream.iterator().asScala
+            .filter(Files.isRegularFile(_))
+            .filter { p =>
+              val base = p.getFileName.toString
+              specialFiles.contains(base) || extensions.exists(base.endsWith)
+            }
+            .toList
+        } finally stream.close()
+      }
     } else List.empty
   }
 
