@@ -41,9 +41,11 @@ object Routes {
     val patchRoutes         = new PatchRoutes(client).routes
     val decisionListRoutes  = new DecisionRoutes(queryApi).routes
     val expandRoutes        = new ExpandRoutes(queryApi).routes
+    val statsRoutes         = new StatsRoutes(client).routes
 
     health <+> contextRoutes <+> ingestionRoutes <+> entityRoutes <+>
       diffRoutes <+> conflictRoutes <+> decideRoutes <+> searchRoutes <+>
-      truthRoutes <+> patchRoutes <+> decisionListRoutes <+> expandRoutes
+      truthRoutes <+> patchRoutes <+> decisionListRoutes <+> expandRoutes <+>
+      statsRoutes
   }
 }

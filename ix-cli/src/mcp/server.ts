@@ -1,7 +1,7 @@
 /**
  * Ix Memory MCP Server
  *
- * Exposes 13 tools and 2 resources over the Model Context Protocol,
+ * Exposes 14 tools and 2 resources over the Model Context Protocol,
  * providing persistent, time-aware memory to LLM coding assistants.
  */
 
@@ -345,7 +345,7 @@ server.tool(
 // --- ix_expand ---------------------------------------------------------------
 server.tool(
   "ix_expand",
-  "Expand a node's neighborhood — retrieve connected nodes and edges.",
+  "Expand a node's neighborhood — retrieve connected nodes and edges. Filter by direction and edge predicates (CALLS, IMPORTS, CONTAINS, etc.).",
   {
     nodeId: z.string().describe("Node ID to expand from"),
     hops: z
@@ -354,15 +354,17 @@ server.tool(
     direction: z
       .optional(z.string())
       .describe("Edge direction: in | out | both (default both)"),
+    predicates: z
+      .optional(z.array(z.string()))
+      .describe("Filter by edge predicates (e.g. ['CALLS', 'IMPORTS'])"),
   },
-  async ({ nodeId, hops: _hops, direction: _direction }) => {
+  async ({ nodeId, hops, direction, predicates }) => {
     try {
       const resolvedId = await client.resolvePrefix(nodeId);
-      // The entity endpoint already returns edges; use it as the expansion source.
-      const entity = await client.entity(resolvedId);
+      const result = await client.expand(resolvedId, { direction, predicates, hops });
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(entity, null, 2) },
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
         ],
       };
     } catch (err) {
@@ -562,6 +564,30 @@ server.tool(
         isError: true,
         content: [
           { type: "text" as const, text: `ix_patches failed: ${String(err)}` },
+        ],
+      };
+    }
+  },
+);
+
+// --- ix_stats ----------------------------------------------------------------
+server.tool(
+  "ix_stats",
+  "Get graph statistics — total node/edge counts broken down by kind and predicate.",
+  {},
+  async () => {
+    try {
+      const result = await client.stats();
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        ],
+      };
+    } catch (err) {
+      return {
+        isError: true,
+        content: [
+          { type: "text" as const, text: `ix_stats failed: ${String(err)}` },
         ],
       };
     }

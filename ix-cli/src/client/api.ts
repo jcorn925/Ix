@@ -116,6 +116,10 @@ export class IxClient {
     return this.post(`/v1/provenance/${entityId}`, {});
   }
 
+  async stats(): Promise<any> {
+    return this.get("/v1/stats");
+  }
+
   async health(): Promise<HealthResponse> {
     return this.get("/v1/health");
   }

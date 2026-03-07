@@ -18,6 +18,10 @@ import { registerTextCommand } from "./commands/text.js";
 import { registerLocateCommand } from "./commands/locate.js";
 import { registerExplainCommand } from "./commands/explain.js";
 import { registerCallersCommand } from "./commands/callers.js";
+import { registerImportsCommand } from "./commands/imports.js";
+import { registerContainsCommand } from "./commands/contains.js";
+import { registerStatsCommand } from "./commands/stats.js";
+import { registerDoctorCommand } from "./commands/doctor.js";
 
 const program = new Command();
 program
@@ -43,6 +47,10 @@ registerTextCommand(program);
 registerLocateCommand(program);
 registerExplainCommand(program);
 registerCallersCommand(program);
+registerImportsCommand(program);
+registerContainsCommand(program);
+registerStatsCommand(program);
+registerDoctorCommand(program);
 
 program
   .command("mcp-start")
