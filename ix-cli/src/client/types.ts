@@ -130,6 +130,14 @@ export interface PatchSummary {
   timestamp?: string;
 }
 
+export interface IngestResult {
+  filesProcessed: number;
+  patchesApplied: number;
+  filesSkipped?: number;
+  entitiesCreated: number;
+  latestRev: number;
+}
+
 export interface HealthResponse {
   status: string;
 }

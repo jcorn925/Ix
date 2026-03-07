@@ -1,5 +1,6 @@
 import type {
   CommitResult,
+  IngestResult,
   StructuredContext,
   GraphNode,
   HealthResponse,
@@ -17,7 +18,7 @@ export class IxClient {
     return this.post("/v1/context", { query: question, ...opts });
   }
 
-  async ingest(path: string, recursive?: boolean): Promise<CommitResult> {
+  async ingest(path: string, recursive?: boolean): Promise<IngestResult> {
     return this.post("/v1/ingest", { path, recursive });
   }
 

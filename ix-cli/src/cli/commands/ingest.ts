@@ -10,11 +10,17 @@ export function registerIngestCommand(program: Command): void {
     .option("--format <fmt>", "Output format (text|json)", "text")
     .action(async (path: string, opts: { recursive?: boolean; format: string }) => {
       const client = new IxClient(getEndpoint());
+      const start = performance.now();
       const result = await client.ingest(path, opts.recursive);
+      const elapsed = ((performance.now() - start) / 1000).toFixed(2);
       if (opts.format === "json") {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(JSON.stringify({ ...result, elapsedSeconds: parseFloat(elapsed) }, null, 2));
       } else {
-        console.log(`Ingested: ${(result as any).filesProcessed ?? 0} files, ${(result as any).patchesApplied ?? 0} patches (rev ${(result as any).latestRev ?? 0})`);
+        console.log(`Ingested: ${result.filesProcessed} files, ${result.patchesApplied} patches applied (${elapsed}s)`);
+        if (result.filesSkipped) {
+          console.log(`Skipped:  ${result.filesSkipped} unchanged files`);
+        }
+        console.log(`Rev:      ${result.latestRev}`);
       }
     });
 }
