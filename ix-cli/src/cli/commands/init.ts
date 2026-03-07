@@ -42,6 +42,13 @@ Ix returns confidence scores with query results. When data has low confidence:
 - Mention the uncertainty to the user (e.g., "Ix has low confidence on this — it may be outdated").
 - Suggest re-ingesting the relevant files to improve confidence.
 - Never present low-confidence data as established fact.
+
+## Command Routing
+- \`ix text\` — exact lexical / snippet / filename lookup (fast, uses ripgrep)
+- \`ix search\` — graph entity search by name, kind, or attribute
+- \`ix query\` — semantic questions about the codebase (assembles context with confidence)
+- \`ix decisions\` — list and inspect recorded design decisions
+- \`ix history\` / \`ix diff\` — temporal questions about entity changes
 ${IX_MARKER_END}`;
 
 export function registerInitCommand(program: Command): void {
