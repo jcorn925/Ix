@@ -22,7 +22,8 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
 
   it should "extract methods from classes" in {
     val result = parser.parse("api.ts", sampleCode)
-    val names = result.entities.map(_.name)
+    val methods = result.entities.filter(_.kind == NodeKind.Method)
+    val names = methods.map(_.name)
     names should contain("getUser")
     names should contain("updateUser")
     names should contain("parseResponse")
@@ -40,11 +41,11 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
     imports.size should be >= 2
   }
 
-  it should "extract class-to-method DEFINES edges" in {
+  it should "extract class-to-method CONTAINS edges" in {
     val result = parser.parse("api.ts", sampleCode)
-    val defines = result.relationships.filter(_.predicate == "DEFINES")
-    val classDefines = defines.filter(_.srcName == "ApiClient")
-    classDefines.size should be >= 3
+    val contains = result.relationships.filter(_.predicate == "CONTAINS")
+    val classContains = contains.filter(_.srcName == "ApiClient")
+    classContains.size should be >= 3
   }
 
   it should "extract function call relationships" in {
@@ -61,7 +62,7 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
 
   it should "store method/function signature as summary attr" in {
     val result = parser.parse("api.ts", sampleCode)
-    val funcs = result.entities.filter(_.kind == NodeKind.Function)
+    val funcs = result.entities.filter(e => e.kind == NodeKind.Function || e.kind == NodeKind.Method)
     funcs should not be empty
     funcs.foreach { f =>
       f.attrs.get("summary") shouldBe defined
@@ -141,7 +142,7 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
     val result = parser.parse("types.ts", source)
     val iface = result.entities.find(e => e.name == "UserProps")
     iface shouldBe defined
-    iface.get.kind shouldBe NodeKind.Class
+    iface.get.kind shouldBe NodeKind.Interface
     iface.get.attrs.get("ts_kind").map(_.noSpaces) shouldBe Some("\"interface\"")
   }
 
@@ -179,8 +180,10 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
       |}
     """.stripMargin
     val result = parser.parse("api.ts", source)
-    result.relationships.exists(r => r.srcName == "Api" && r.dstName == "fetch" && r.predicate == "DEFINES") shouldBe true
-    result.relationships.exists(r => r.srcName == "Api" && r.dstName == "parse" && r.predicate == "DEFINES") shouldBe true
+    result.entities.exists(e => e.name == "fetch" && e.kind == NodeKind.Method) shouldBe true
+    result.entities.exists(e => e.name == "parse" && e.kind == NodeKind.Method) shouldBe true
+    result.relationships.exists(r => r.srcName == "Api" && r.dstName == "fetch" && r.predicate == "CONTAINS") shouldBe true
+    result.relationships.exists(r => r.srcName == "Api" && r.dstName == "parse" && r.predicate == "CONTAINS") shouldBe true
   }
 
   it should "extract function call relationships from function bodies" in {
@@ -225,5 +228,94 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
     result.entities.exists(e => e.name == "Greeting" && e.kind == NodeKind.Function) shouldBe true
     result.entities.exists(e => e.name == "Props") shouldBe true
     result.relationships.exists(r => r.dstName == "react" && r.predicate == "IMPORTS") shouldBe true
+  }
+
+  it should "use Interface kind for interfaces" in {
+    val source = """
+      |export interface UserProps {
+      |  name: string;
+      |  age: number;
+      |}
+    """.stripMargin
+    val result = parser.parse("types.ts", source)
+    val iface = result.entities.find(e => e.name == "UserProps")
+    iface shouldBe defined
+    iface.get.kind shouldBe NodeKind.Interface
+  }
+
+  it should "use Method kind for class methods" in {
+    val source = """
+      |class Api {
+      |  async fetch(url: string) {
+      |    return this.http.get(url);
+      |  }
+      |  private parse(data: string) {
+      |    return data.split(',');
+      |  }
+      |}
+    """.stripMargin
+    val result = parser.parse("api.ts", source)
+    val methods = result.entities.filter(_.kind == NodeKind.Method)
+    methods.map(_.name) should contain allOf ("fetch", "parse")
+  }
+
+  it should "emit CONTAINS edges from file to class" in {
+    val source = """
+      |export class UserService {
+      |  getUser(id: string): User {
+      |    return this.db.find(id);
+      |  }
+      |}
+    """.stripMargin
+    val result = parser.parse("service.ts", source)
+    result.relationships.exists(r =>
+      r.srcName == "service.ts" && r.dstName == "UserService" && r.predicate == "CONTAINS"
+    ) shouldBe true
+  }
+
+  it should "emit CONTAINS edges from class to method" in {
+    val source = """
+      |class Api {
+      |  fetch(url: string) {
+      |    return url;
+      |  }
+      |}
+    """.stripMargin
+    val result = parser.parse("api.ts", source)
+    result.relationships.exists(r =>
+      r.srcName == "Api" && r.dstName == "fetch" && r.predicate == "CONTAINS"
+    ) shouldBe true
+  }
+
+  it should "store visibility attr on methods" in {
+    val source = """
+      |class Api {
+      |  private parse(data: string) {
+      |    return data;
+      |  }
+      |  public fetch(url: string) {
+      |    return url;
+      |  }
+      |}
+    """.stripMargin
+    val result = parser.parse("api.ts", source)
+    val parse = result.entities.find(_.name == "parse").get
+    parse.attrs.get("visibility").flatMap(_.asString) shouldBe Some("private")
+    val fetch = result.entities.find(_.name == "fetch").get
+    fetch.attrs.get("visibility").flatMap(_.asString) shouldBe Some("public")
+  }
+
+  it should "store signature attr on methods" in {
+    val source = """
+      |class Api {
+      |  async fetch(url: string): Promise<Response> {
+      |    return url;
+      |  }
+      |}
+    """.stripMargin
+    val result = parser.parse("api.ts", source)
+    val fetch = result.entities.find(_.name == "fetch").get
+    fetch.attrs.get("signature").flatMap(_.asString) shouldBe defined
+    fetch.attrs("signature").asString.get should include("fetch")
   }
 }

@@ -58,6 +58,7 @@ class TypeScriptParser extends Parser {
             lineEnd   = classEnd
           )
           relationships = relationships :+ ParsedRelationship(fileName, className, "DEFINES")
+          relationships = relationships :+ ParsedRelationship(fileName, className, "CONTAINS")
           classRanges = classRanges :+ (className, lineNum, classEnd)
 
           // Extract methods from this class
@@ -76,8 +77,10 @@ class TypeScriptParser extends Parser {
               name      = funcName,
               kind      = NodeKind.Function,
               attrs     = Map(
-                "language" -> Json.fromString("typescript"),
-                "summary"  -> Json.fromString(summary)
+                "language"   -> Json.fromString("typescript"),
+                "summary"    -> Json.fromString(summary),
+                "signature"  -> Json.fromString(summary),
+                "visibility" -> Json.fromString("public")
               ),
               lineStart = lineNum,
               lineEnd   = funcEnd
@@ -103,8 +106,10 @@ class TypeScriptParser extends Parser {
                 name      = funcName,
                 kind      = NodeKind.Function,
                 attrs     = Map(
-                  "language" -> Json.fromString("typescript"),
-                  "summary"  -> Json.fromString(summary)
+                  "language"   -> Json.fromString("typescript"),
+                  "summary"    -> Json.fromString(summary),
+                  "signature"  -> Json.fromString(summary),
+                  "visibility" -> Json.fromString("public")
                 ),
                 lineStart = lineNum,
                 lineEnd   = funcEnd
@@ -151,11 +156,11 @@ class TypeScriptParser extends Parser {
         // Check for interface definition
         InterfacePattern.findFirstMatchIn(line).foreach { m =>
           val ifaceName = m.group(1)
-          if (!entities.exists(e => e.name == ifaceName && e.kind == NodeKind.Class)) {
+          if (!entities.exists(e => e.name == ifaceName && e.kind == NodeKind.Interface)) {
             val ifaceEnd = findBraceBlockEnd(lines, idx)
             entities = entities :+ ParsedEntity(
               name      = ifaceName,
-              kind      = NodeKind.Class, // model interfaces as Class kind
+              kind      = NodeKind.Interface,
               attrs     = Map(
                 "language"  -> Json.fromString("typescript"),
                 "ts_kind"   -> Json.fromString("interface")
@@ -213,6 +218,12 @@ class TypeScriptParser extends Parser {
   private def insideClass(lineNum: Int, classRanges: Vector[(String, Int, Int)]): Boolean =
     classRanges.exists { case (_, start, end) => lineNum > start && lineNum <= end }
 
+  private def extractVisibility(trimmedLine: String): String = {
+    if (trimmedLine.startsWith("private ") || trimmedLine.startsWith("private\t"))   "private"
+    else if (trimmedLine.startsWith("protected ") || trimmedLine.startsWith("protected\t")) "protected"
+    else "public"
+  }
+
   /**
    * Extract methods from a class body.
    */
@@ -237,17 +248,20 @@ class TypeScriptParser extends Parser {
           if (!TypeScriptKeywords.contains(methodName)) {
             val methodEnd = findBraceBlockEnd(lines, i)
             val summary = line.trim.take(120)
+            val visibility = extractVisibility(line.trim)
             entities = entities :+ ParsedEntity(
               name      = methodName,
-              kind      = NodeKind.Function,
+              kind      = NodeKind.Method,
               attrs     = Map(
-                "language" -> Json.fromString("typescript"),
-                "summary"  -> Json.fromString(summary)
+                "language"   -> Json.fromString("typescript"),
+                "summary"    -> Json.fromString(summary),
+                "signature"  -> Json.fromString(summary),
+                "visibility" -> Json.fromString(visibility)
               ),
               lineStart = lineNum,
               lineEnd   = methodEnd
             )
-            relationships = relationships :+ ParsedRelationship(className, methodName, "DEFINES")
+            relationships = relationships :+ ParsedRelationship(className, methodName, "CONTAINS")
 
             // Extract calls within this method
             val calls = extractCalls(lines, i, methodEnd, methodName)
