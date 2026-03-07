@@ -69,64 +69,88 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
     client.query(aql, binds.toMap).map(_.flatMap(parseNode).toVector)
   }
 
-  override def searchNodes(text: String, limit: Int = 20): IO[Vector[GraphNode]] =
-    client.query(
-      """LET name_matches = (
-        |  FOR n IN nodes
-        |    FILTER CONTAINS(LOWER(n.name), LOWER(@text))
-        |      AND n.deleted_rev == null
-        |    RETURN DISTINCT n.logical_id
-        |)
-        |
-        |LET provenance_matches = (
-        |  FOR n IN nodes
-        |    FILTER CONTAINS(LOWER(n.provenance.source_uri), LOWER(@text))
-        |      AND n.deleted_rev == null
-        |    RETURN DISTINCT n.logical_id
-        |)
-        |
-        |LET claim_matches = (
-        |  FOR c IN claims
-        |    FILTER c.deleted_rev == null
-        |      AND (
-        |        CONTAINS(LOWER(c.field), LOWER(@text))
-        |        OR CONTAINS(LOWER(TO_STRING(c.value)), LOWER(@text))
-        |      )
-        |    RETURN DISTINCT c.entity_id
-        |)
-        |
-        |LET decision_matches = (
-        |  FOR n IN nodes
-        |    FILTER n.kind == "decision"
-        |      AND n.deleted_rev == null
-        |      AND (
-        |        CONTAINS(LOWER(TO_STRING(n.attrs.title)), LOWER(@text))
-        |        OR CONTAINS(LOWER(TO_STRING(n.attrs.rationale)), LOWER(@text))
-        |      )
-        |    RETURN DISTINCT n.logical_id
-        |)
-        |
-        |LET attr_matches = (
-        |  FOR n IN nodes
-        |    FILTER n.deleted_rev == null
-        |      AND CONTAINS(LOWER(TO_STRING(n.attrs)), LOWER(@text))
-        |    RETURN DISTINCT n.logical_id
-        |)
-        |
-        |LET all_ids = UNION_DISTINCT(name_matches, provenance_matches, claim_matches, decision_matches, attr_matches)
-        |
-        |FOR id IN all_ids
-        |  FOR n IN nodes
-        |    FILTER n.logical_id == id AND n.deleted_rev == null
-        |  LET symbol_priority = n.kind IN ["function", "method", "class", "trait", "object", "interface"] ? 0 : 1
-        |  SORT symbol_priority ASC, n.name ASC
-        |  LIMIT @limit
-        |  RETURN n""".stripMargin,
-      Map(
-        "text"   -> text.asInstanceOf[AnyRef],
-        "limit"  -> Int.box(limit).asInstanceOf[AnyRef]
-      )
-    ).map(_.flatMap(parseNode).toVector)
+  override def searchNodes(
+    text: String,
+    limit: Int = 20,
+    kind: Option[String] = None,
+    language: Option[String] = None,
+    asOfRev: Option[Rev] = None
+  ): IO[Vector[GraphNode]] = {
+    val liveFilter = asOfRev match {
+      case Some(r) => s"AND n.created_rev <= ${r.value} AND (n.deleted_rev == null OR ${r.value} < n.deleted_rev)"
+      case None    => "AND n.deleted_rev == null"
+    }
+    val claimLiveFilter = asOfRev match {
+      case Some(r) => s"AND c.created_rev <= ${r.value} AND (c.deleted_rev == null OR ${r.value} < c.deleted_rev)"
+      case None    => "AND c.deleted_rev == null"
+    }
+    val kindFilter = kind.map(_ => "FILTER n2.kind == @kind").getOrElse("")
+    val langFilter = language.map(_ => "FILTER CONTAINS(LOWER(TO_STRING(n2.provenance.source_uri)), LOWER(@language))").getOrElse("")
+
+    val aql =
+      s"""LET name_matches = (
+         |  FOR n IN nodes
+         |    FILTER CONTAINS(LOWER(n.name), LOWER(@text))
+         |      $liveFilter
+         |    RETURN DISTINCT n.logical_id
+         |)
+         |
+         |LET provenance_matches = (
+         |  FOR n IN nodes
+         |    FILTER CONTAINS(LOWER(n.provenance.source_uri), LOWER(@text))
+         |      $liveFilter
+         |    RETURN DISTINCT n.logical_id
+         |)
+         |
+         |LET claim_matches = (
+         |  FOR c IN claims
+         |    FILTER (
+         |        CONTAINS(LOWER(c.field), LOWER(@text))
+         |        OR CONTAINS(LOWER(TO_STRING(c.value)), LOWER(@text))
+         |      )
+         |      $claimLiveFilter
+         |    RETURN DISTINCT c.entity_id
+         |)
+         |
+         |LET decision_matches = (
+         |  FOR n IN nodes
+         |    FILTER n.kind == "decision"
+         |      $liveFilter
+         |      AND (
+         |        CONTAINS(LOWER(TO_STRING(n.attrs.title)), LOWER(@text))
+         |        OR CONTAINS(LOWER(TO_STRING(n.attrs.rationale)), LOWER(@text))
+         |      )
+         |    RETURN DISTINCT n.logical_id
+         |)
+         |
+         |LET attr_matches = (
+         |  FOR n IN nodes
+         |    FILTER CONTAINS(LOWER(TO_STRING(n.attrs)), LOWER(@text))
+         |      $liveFilter
+         |    RETURN DISTINCT n.logical_id
+         |)
+         |
+         |LET all_ids = UNION_DISTINCT(name_matches, provenance_matches, claim_matches, decision_matches, attr_matches)
+         |
+         |FOR id IN all_ids
+         |  FOR n2 IN nodes
+         |    FILTER n2.logical_id == id AND n2.deleted_rev == null
+         |    $kindFilter
+         |    $langFilter
+         |  LET symbol_priority = n2.kind IN ["function", "method", "class", "trait", "object", "interface"] ? 0 : 1
+         |  SORT symbol_priority ASC, n2.name ASC
+         |  LIMIT @limit
+         |  RETURN n2""".stripMargin
+
+    val binds = scala.collection.mutable.Map[String, AnyRef](
+      "text"  -> text.asInstanceOf[AnyRef],
+      "limit" -> Int.box(limit).asInstanceOf[AnyRef]
+    )
+    kind.foreach(k => binds += ("kind" -> k.asInstanceOf[AnyRef]))
+    language.foreach(l => binds += ("language" -> l.asInstanceOf[AnyRef]))
+
+    client.query(aql, binds.toMap).map(_.flatMap(parseNode).toVector)
+  }
 
   override def expand(
     nodeId: NodeId,

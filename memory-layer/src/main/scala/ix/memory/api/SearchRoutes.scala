@@ -11,7 +11,13 @@ import org.http4s.dsl.io._
 import ix.memory.db.GraphQueryApi
 import ix.memory.model._
 
-case class SearchRequest(term: String, limit: Option[Int] = None)
+case class SearchRequest(
+  term: String,
+  limit: Option[Int] = None,
+  kind: Option[String] = None,
+  language: Option[String] = None,
+  asOfRev: Option[Long] = None
+)
 
 object SearchRequest {
   implicit val decoder: Decoder[SearchRequest] = deriveDecoder[SearchRequest]
@@ -23,7 +29,7 @@ class SearchRoutes(queryApi: GraphQueryApi) {
     case req @ POST -> Root / "v1" / "search" =>
       (for {
         body    <- req.as[SearchRequest]
-        nodes   <- queryApi.searchNodes(body.term, body.limit.getOrElse(20))
+        nodes   <- queryApi.searchNodes(body.term, body.limit.getOrElse(20), body.kind, body.language, body.asOfRev.map(Rev(_)))
         resp    <- Ok(nodes.asJson)
       } yield resp).handleErrorWith(ErrorHandler.handle(_))
   }

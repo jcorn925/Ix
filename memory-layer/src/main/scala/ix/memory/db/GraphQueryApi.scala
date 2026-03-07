@@ -8,7 +8,9 @@ trait GraphQueryApi {
   def getNode(id: NodeId, asOfRev: Option[Rev] = None): IO[Option[GraphNode]]
   def findNodesByKind(kind: NodeKind, limit: Int = 100): IO[Vector[GraphNode]]
   def listDecisions(limit: Int = 50, topic: Option[String] = None): IO[Vector[GraphNode]]
-  def searchNodes(text: String, limit: Int = 20): IO[Vector[GraphNode]]
+  def searchNodes(text: String, limit: Int = 20,
+                  kind: Option[String] = None, language: Option[String] = None,
+                  asOfRev: Option[Rev] = None): IO[Vector[GraphNode]]
   def expand(nodeId: NodeId, direction: Direction,
              predicates: Option[Set[String]] = None, hops: Int = 1,
              asOfRev: Option[Rev] = None): IO[ExpandResult]
