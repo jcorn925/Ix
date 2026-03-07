@@ -16,7 +16,7 @@ export function registerCallersCommand(program: Command): void {
       if (!target) return;
       printResolved(target);
       const result = await client.expand(target.id, { direction: "in", predicates: ["CALLS"] });
-      formatEdgeResults(result.nodes, "callers", target.name, opts.format);
+      formatEdgeResults(result.nodes, "callers", target.name, opts.format, target);
     });
 
   program
@@ -30,6 +30,6 @@ export function registerCallersCommand(program: Command): void {
       if (!target) return;
       printResolved(target);
       const result = await client.expand(target.id, { direction: "out", predicates: ["CALLS"] });
-      formatEdgeResults(result.nodes, "callees", target.name, opts.format);
+      formatEdgeResults(result.nodes, "callees", target.name, opts.format, target);
     });
 }

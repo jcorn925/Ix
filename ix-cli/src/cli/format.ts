@@ -308,9 +308,14 @@ export function formatLocateResults(results: LocateResult[], format: string): vo
   }
 }
 
-export function formatEdgeResults(nodes: any[], relation: string, symbol: string, format: string): void {
+export function formatEdgeResults(
+  nodes: any[], relation: string, symbol: string, format: string,
+  resolvedTarget?: { id: string; kind: string; name: string }
+): void {
   if (format === "json") {
-    console.log(JSON.stringify(nodes, null, 2));
+    const output: any = { results: nodes };
+    if (resolvedTarget) output.resolvedTarget = resolvedTarget;
+    console.log(JSON.stringify(output, null, 2));
     return;
   }
   if (nodes.length === 0) {
