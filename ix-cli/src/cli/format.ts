@@ -86,9 +86,38 @@ export function formatNodes(nodes: any[], format: string): void {
   }
   for (const n of nodes) {
     const shortId = n.id.length > 8 ? n.id.slice(0, 8) : n.id;
+    if (n.kind === "decision") {
+      const title = n.attrs?.title ?? n.name ?? "(untitled)";
+      console.log(
+        `  ${chalk.blue("decision")}  ${chalk.dim(shortId)}  ${title}`
+      );
+    } else {
+      console.log(
+        `  ${chalk.cyan(n.kind)}  ${chalk.dim(shortId)}  ${n.attrs?.name ?? n.name ?? JSON.stringify(n.attrs)}`
+      );
+    }
+  }
+}
+
+export function formatDecisions(nodes: any[], format: string): void {
+  if (format === "json") {
+    console.log(JSON.stringify(nodes, null, 2));
+    return;
+  }
+  if (nodes.length === 0) {
+    console.log("No decisions found.");
+    return;
+  }
+  for (const n of nodes) {
+    const shortId = n.id.length > 8 ? n.id.slice(0, 8) : n.id;
+    const title = n.attrs?.title ?? n.name ?? "(untitled)";
+    const rationale = n.attrs?.rationale ?? "";
     console.log(
-      `  ${chalk.cyan(n.kind)}  ${chalk.dim(shortId)}  attrs: ${chalk.gray(JSON.stringify(n.attrs))}`
+      `  ${chalk.blue("*")} ${chalk.dim(shortId)}  ${chalk.bold(title)}`
     );
+    if (rationale) {
+      console.log(`    ${chalk.gray(rationale)}`);
+    }
   }
 }
 

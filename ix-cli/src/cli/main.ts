@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { registerQueryCommand } from "./commands/query.js";
 import { registerIngestCommand } from "./commands/ingest.js";
 import { registerDecideCommand } from "./commands/decide.js";
+import { registerDecisionsCommand } from "./commands/decisions.js";
 import { registerSearchCommand } from "./commands/search.js";
 import { registerTruthCommand } from "./commands/truth.js";
 import { registerPatchesCommand } from "./commands/patches.js";
@@ -23,6 +24,7 @@ program
 registerQueryCommand(program);
 registerIngestCommand(program);
 registerDecideCommand(program);
+registerDecisionsCommand(program);
 registerSearchCommand(program);
 registerTruthCommand(program);
 registerPatchesCommand(program);

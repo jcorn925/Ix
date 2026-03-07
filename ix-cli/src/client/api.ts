@@ -29,8 +29,35 @@ export class IxClient {
     return this.post("/v1/decide", { title, rationale, ...opts });
   }
 
-  async search(term: string, limit?: number): Promise<GraphNode[]> {
-    return this.post("/v1/search", { term, limit });
+  async search(
+    term: string,
+    opts?: { limit?: number; kind?: string; language?: string; asOfRev?: number }
+  ): Promise<GraphNode[]> {
+    return this.post("/v1/search", {
+      term,
+      limit: opts?.limit,
+      kind: opts?.kind,
+      language: opts?.language,
+      asOfRev: opts?.asOfRev,
+    });
+  }
+
+  async listDecisions(opts?: { limit?: number; topic?: string }): Promise<GraphNode[]> {
+    return this.post("/v1/decisions", { limit: opts?.limit, topic: opts?.topic });
+  }
+
+  async resolvePrefix(prefix: string): Promise<string> {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(prefix)) return prefix;
+
+    const result = await this.get<{ id?: string; error?: string; matches?: string[] }>(
+      `/v1/resolve-prefix/${encodeURIComponent(prefix)}`
+    );
+    if (result.id) return result.id;
+    if (result.error === "ambiguous") {
+      throw new Error(`Ambiguous prefix "${prefix}" — matches: ${result.matches?.join(", ")}`);
+    }
+    throw new Error(`No entity found for prefix: ${prefix}`);
   }
 
   async entity(id: string): Promise<{
