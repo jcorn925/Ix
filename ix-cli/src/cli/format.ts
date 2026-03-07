@@ -86,14 +86,14 @@ export function formatNodes(nodes: any[], format: string): void {
   }
   for (const n of nodes) {
     const shortId = n.id.length > 8 ? n.id.slice(0, 8) : n.id;
+    const name = n.name || n.attrs?.name || n.attrs?.title || "(unnamed)";
     if (n.kind === "decision") {
-      const title = n.attrs?.title ?? n.name ?? "(untitled)";
       console.log(
-        `  ${chalk.blue("decision")}  ${chalk.dim(shortId)}  ${title}`
+        `  ${chalk.blue("decision")}  ${chalk.dim(shortId)}  ${name}`
       );
     } else {
       console.log(
-        `  ${chalk.cyan(n.kind)}  ${chalk.dim(shortId)}  ${n.attrs?.name ?? n.name ?? JSON.stringify(n.attrs)}`
+        `  ${chalk.cyan(n.kind.padEnd(10))}  ${chalk.dim(shortId)}  ${chalk.bold(name)}`
       );
     }
   }
@@ -196,19 +196,59 @@ export function formatDiff(result: any, format: string): void {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  console.log(chalk.cyan.bold(`Diff: rev ${result.fromRev} → ${result.toRev}`));
+  console.log(chalk.cyan.bold(`\nDiff: rev ${result.fromRev} → ${result.toRev}`));
   if (!result.changes?.length) {
     console.log(chalk.dim("  No changes in this range."));
     return;
   }
-  for (const change of result.changes) {
-    const icon = change.changeType === "removed" ? chalk.red("- ")
-      : change.changeType === "added" ? chalk.green("+ ")
-      : chalk.yellow("~ ");
-    const name = change.atToRev?.attrs?.name || change.entityId?.substring(0, 8);
-    const kind = change.atToRev?.kind || "unknown";
-    console.log(`  ${icon}${chalk.bold(name)} (${kind}) [${change.changeType}]`);
+
+  const added = result.changes.filter((c: any) => c.changeType === "added");
+  const modified = result.changes.filter((c: any) => c.changeType === "modified");
+  const removed = result.changes.filter((c: any) => c.changeType === "removed");
+  const legacy = result.changes.filter((c: any) => c.changeType === "added_or_modified");
+
+  if (added.length > 0) {
+    console.log(chalk.green.bold(`\n  Added (${added.length}):`));
+    for (const c of added) {
+      const node = c.atToRev;
+      const name = node?.name || node?.attrs?.name || c.entityId?.substring(0, 8);
+      const kind = node?.kind || "unknown";
+      const summary = c.summary ? chalk.dim(` — ${c.summary}`) : "";
+      console.log(`    ${chalk.green("+")} ${chalk.cyan(kind.padEnd(10))} ${chalk.bold(name)}${summary}`);
+    }
   }
+
+  if (modified.length > 0) {
+    console.log(chalk.yellow.bold(`\n  Modified (${modified.length}):`));
+    for (const c of modified) {
+      const node = c.atToRev;
+      const name = node?.name || node?.attrs?.name || c.entityId?.substring(0, 8);
+      const kind = node?.kind || "unknown";
+      const summary = c.summary ? chalk.dim(` — ${c.summary}`) : "";
+      console.log(`    ${chalk.yellow("~")} ${chalk.cyan(kind.padEnd(10))} ${chalk.bold(name)}${summary}`);
+    }
+  }
+
+  if (removed.length > 0) {
+    console.log(chalk.red.bold(`\n  Removed (${removed.length}):`));
+    for (const c of removed) {
+      const node = c.atFromRev;
+      const name = node?.name || node?.attrs?.name || c.entityId?.substring(0, 8);
+      const kind = node?.kind || "unknown";
+      console.log(`    ${chalk.red("-")} ${chalk.cyan(kind.padEnd(10))} ${chalk.bold(name)}`);
+    }
+  }
+
+  if (legacy.length > 0) {
+    console.log(chalk.yellow.bold(`\n  Changed (${legacy.length}):`));
+    for (const c of legacy) {
+      const node = c.atToRev;
+      const name = node?.name || node?.attrs?.name || c.entityId?.substring(0, 8);
+      const kind = node?.kind || "unknown";
+      console.log(`    ${chalk.yellow("~")} ${chalk.cyan(kind.padEnd(10))} ${chalk.bold(name)}`);
+    }
+  }
+  console.log();
 }
 
 export interface TextResult {
