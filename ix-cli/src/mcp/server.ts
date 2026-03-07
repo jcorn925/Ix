@@ -151,7 +151,7 @@ server.tool(
   },
   async ({ term, limit }) => {
     try {
-      const nodes = await client.search(term, limit);
+      const nodes = await client.search(term, { limit });
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(nodes, null, 2) },
