@@ -79,7 +79,12 @@ class ModelSpec extends AnyFlatSpec with Matchers {
       NodeKind.Service,
       NodeKind.Endpoint,
       NodeKind.Intent,
-      NodeKind.Decision
+      NodeKind.Decision,
+      NodeKind.Doc,
+      NodeKind.Object,
+      NodeKind.Trait,
+      NodeKind.Interface,
+      NodeKind.Method
     )
 
     variants.foreach { nk =>
