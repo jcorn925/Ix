@@ -18,7 +18,7 @@ object IngestRequest {
   implicit val encoder: Encoder[IngestRequest] = deriveEncoder[IngestRequest]
 }
 
-case class IngestResponse(filesProcessed: Int, patchesApplied: Int, entitiesCreated: Int, latestRev: Long)
+case class IngestResponse(filesProcessed: Int, patchesApplied: Int, filesSkipped: Int, entitiesCreated: Int, latestRev: Long)
 
 object IngestResponse {
   implicit val encoder: Encoder[IngestResponse] = deriveEncoder[IngestResponse]
@@ -39,6 +39,7 @@ class IngestionRoutes(ingestionService: IngestionService, bulkIngestionService: 
         resp     <- Ok(IngestResponse(
           filesProcessed  = result.filesProcessed,
           patchesApplied  = result.patchesApplied,
+          filesSkipped    = result.filesSkipped,
           entitiesCreated = result.entitiesCreated,
           latestRev       = result.latestRev.value
         ))
