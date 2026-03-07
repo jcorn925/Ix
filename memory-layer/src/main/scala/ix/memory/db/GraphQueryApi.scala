@@ -19,6 +19,7 @@ trait GraphQueryApi {
   def getPatchesForEntity(entityId: NodeId): IO[List[Json]]
   def getPatchesBySource(sourceUri: String, extractor: String): IO[Vector[Json]]
   def getChangedEntities(fromRev: Rev, toRev: Rev): IO[Vector[GraphNode]]
+  def resolvePrefix(prefix: String): IO[Vector[NodeId]]
 }
 
 sealed trait Direction

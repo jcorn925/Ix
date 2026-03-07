@@ -35,6 +35,20 @@ class EntityRoutes(queryApi: GraphQueryApi) {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
+    // GET /v1/resolve-prefix/:prefix
+    case GET -> Root / "v1" / "resolve-prefix" / prefix =>
+      (for {
+        ids  <- queryApi.resolvePrefix(prefix)
+        resp <- ids.size match {
+          case 0 => NotFound(Json.obj("error" -> s"No entity matches prefix: $prefix".asJson))
+          case 1 => Ok(Json.obj("id" -> ids.head.value.toString.asJson))
+          case _ => Ok(Json.obj(
+            "error"   -> "ambiguous".asJson,
+            "matches" -> ids.map(_.value.toString).asJson
+          ))
+        }
+      } yield resp).handleErrorWith(ErrorHandler.handle(_))
+
     // GET /v1/entity/:id
     case GET -> Root / "v1" / "entity" / UUIDVar(id) =>
       val nodeId = NodeId(id)

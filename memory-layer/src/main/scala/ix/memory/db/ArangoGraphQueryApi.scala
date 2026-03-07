@@ -295,6 +295,19 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
       )
     ).map(_.flatMap(parseNode).toVector)
 
+  override def resolvePrefix(prefix: String): IO[Vector[NodeId]] =
+    client.query(
+      """FOR n IN nodes
+        |  FILTER n.deleted_rev == null
+        |    AND STARTS_WITH(n.logical_id, @prefix)
+        |  COLLECT lid = n.logical_id
+        |  LIMIT 10
+        |  RETURN lid""".stripMargin,
+      Map("prefix" -> prefix.asInstanceOf[AnyRef])
+    ).map(_.flatMap(_.asString).flatMap(s =>
+      scala.util.Try(java.util.UUID.fromString(s)).toOption.map(NodeId(_))
+    ).toVector)
+
   // ── JSON Parsers (snake_case → camelCase) ───────────────────────────
 
   private def parseNode(json: Json): Option[GraphNode] = {
