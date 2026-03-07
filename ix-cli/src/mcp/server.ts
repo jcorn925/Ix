@@ -465,8 +465,9 @@ server.tool(
     term: z.string().describe("Text/pattern to search for"),
     limit: z.optional(z.number()).describe("Max results (default 20)"),
     path: z.optional(z.string()).describe("Restrict search to a directory path"),
+    language: z.optional(z.string()).describe("Filter by language (python, typescript, scala, etc.)"),
   },
-  async ({ term, limit, path }) => {
+  async ({ term, limit, path, language }) => {
     try {
       const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
@@ -474,15 +475,23 @@ server.tool(
 
       const maxResults = limit ?? 20;
       const searchPath = path ?? ".";
-      const { stdout } = await execFileAsync("rg", [
+      const rgArgs = [
         "--json",
         "--max-count", String(maxResults),
         "--no-heading",
-        term,
-        searchPath,
-      ], { maxBuffer: 10 * 1024 * 1024 });
+      ];
 
-      const results: Array<{ path: string; line: number; snippet: string }> = [];
+      if (language) {
+        for (const g of ixTextLanguageGlobs(language)) {
+          rgArgs.push("--glob", g);
+        }
+      }
+
+      rgArgs.push(term, searchPath);
+
+      const { stdout } = await execFileAsync("rg", rgArgs, { maxBuffer: 10 * 1024 * 1024 });
+
+      const results: Array<{ path: string; line_start: number; line_end: number; snippet: string; engine: string; score: number }> = [];
       for (const line of stdout.split("\n")) {
         if (!line.trim()) continue;
         try {
@@ -491,8 +500,11 @@ server.tool(
             const data = parsed.data;
             results.push({
               path: data.path?.text ?? "",
-              line: data.line_number ?? 0,
+              line_start: data.line_number ?? 0,
+              line_end: data.line_number ?? 0,
               snippet: (data.lines?.text ?? "").trim(),
+              engine: "ripgrep",
+              score: 1.0,
             });
           }
         } catch { /* skip */ }
@@ -607,6 +619,24 @@ server.resource(
     };
   },
 );
+
+// ============================= HELPERS ======================================
+
+function ixTextLanguageGlobs(lang: string): string[] {
+  switch (lang) {
+    case "python": return ["*.py"];
+    case "typescript": return ["*.ts", "*.tsx"];
+    case "javascript": return ["*.js", "*.jsx", "*.mjs", "*.cjs"];
+    case "scala": return ["*.scala", "*.sc"];
+    case "java": return ["*.java"];
+    case "go": return ["*.go"];
+    case "rust": return ["*.rs"];
+    case "ruby": return ["*.rb"];
+    case "markdown": return ["*.md", "*.mdx"];
+    case "config": return ["*.json", "*.yaml", "*.yml", "*.toml"];
+    default: return [`*.${lang}`];
+  }
+}
 
 // ============================= START ========================================
 

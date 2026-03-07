@@ -213,10 +213,13 @@ export function formatDiff(result: any, format: string): void {
 
 export interface TextResult {
   path: string;
-  line: number;
+  line_start: number;
+  line_end: number;
   snippet: string;
-  score?: number;
-  symbol?: string;
+  engine: string;
+  score: number;
+  language?: string;
+  symbol_hint?: string;
 }
 
 export function formatTextResults(results: TextResult[], format: string): void {
@@ -229,8 +232,10 @@ export function formatTextResults(results: TextResult[], format: string): void {
     return;
   }
   for (const r of results) {
+    const lang = r.language ? chalk.magenta(`[${r.language}]`) + " " : "";
+    const sym = r.symbol_hint ? chalk.yellow(`(${r.symbol_hint})`) + " " : "";
     console.log(
-      `  ${chalk.dim(r.path)}${chalk.cyan(":" + r.line)}  ${r.snippet.trim()}`
+      `  ${lang}${chalk.dim(r.path)}${chalk.cyan(":" + r.line_start)}  ${sym}${r.snippet.trim()}`
     );
   }
 }

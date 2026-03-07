@@ -307,7 +307,7 @@ describe("formatDecisions", () => {
 describe("formatTextResults", () => {
   it("should output JSON when format is json", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const results = [{ path: "src/foo.ts", line: 42, snippet: "const foo = bar;" }];
+    const results = [{ path: "src/foo.ts", line_start: 42, line_end: 42, snippet: "const foo = bar;", engine: "ripgrep", score: 1.0 }];
     formatTextResults(results, "json");
     expect(spy).toHaveBeenCalledWith(JSON.stringify(results, null, 2));
     spy.mockRestore();
@@ -320,9 +320,9 @@ describe("formatTextResults", () => {
     spy.mockRestore();
   });
 
-  it("should display path:line and snippet in text mode", () => {
+  it("should display path:line_start and snippet in text mode", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const results = [{ path: "src/foo.ts", line: 42, snippet: "const foo = bar;" }];
+    const results = [{ path: "src/foo.ts", line_start: 42, line_end: 42, snippet: "const foo = bar;", engine: "ripgrep", score: 1.0 }];
     formatTextResults(results, "text");
     const output = spy.mock.calls.map(c => c[0]).join("\n");
     expect(output).toContain("src/foo.ts");

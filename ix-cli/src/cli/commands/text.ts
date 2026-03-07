@@ -11,17 +11,26 @@ export function registerTextCommand(program: Command): void {
     .description("Fast lexical/text search across the codebase (uses ripgrep)")
     .option("--limit <n>", "Max results", "20")
     .option("--path <dir>", "Restrict search to a directory", ".")
+    .option("--language <lang>", "Filter by language (python, typescript, scala, etc.)")
     .option("--format <fmt>", "Output format (text|json)", "text")
-    .action(async (term: string, opts: { limit: string; path: string; format: string }) => {
+    .action(async (term: string, opts: { limit: string; path: string; format: string; language?: string }) => {
       const limit = parseInt(opts.limit, 10);
       try {
-        const { stdout } = await execFileAsync("rg", [
+        const rgArgs = [
           "--json",
           "--max-count", String(limit),
           "--no-heading",
-          term,
-          opts.path,
-        ], { maxBuffer: 10 * 1024 * 1024 });
+        ];
+
+        if (opts.language) {
+          for (const g of languageGlobs(opts.language)) {
+            rgArgs.push("--glob", g);
+          }
+        }
+
+        rgArgs.push(term, opts.path);
+
+        const { stdout } = await execFileAsync("rg", rgArgs, { maxBuffer: 10 * 1024 * 1024 });
 
         const results: TextResult[] = [];
         for (const line of stdout.split("\n")) {
@@ -30,10 +39,16 @@ export function registerTextCommand(program: Command): void {
             const parsed = JSON.parse(line);
             if (parsed.type === "match") {
               const data = parsed.data;
+              const filePath = data.path?.text ?? "";
+              const lineNum = data.line_number ?? 0;
               results.push({
-                path: data.path?.text ?? "",
-                line: data.line_number ?? 0,
+                path: filePath,
+                line_start: lineNum,
+                line_end: lineNum,
                 snippet: data.lines?.text ?? "",
+                engine: "ripgrep",
+                score: 1.0,
+                language: inferLanguage(filePath),
               });
             }
           } catch {
@@ -54,4 +69,35 @@ export function registerTextCommand(program: Command): void {
         }
       }
     });
+}
+
+function inferLanguage(filePath: string): string | undefined {
+  if (filePath.endsWith(".py")) return "python";
+  if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) return "typescript";
+  if (filePath.endsWith(".js") || filePath.endsWith(".jsx")) return "javascript";
+  if (filePath.endsWith(".scala") || filePath.endsWith(".sc")) return "scala";
+  if (filePath.endsWith(".java")) return "java";
+  if (filePath.endsWith(".go")) return "go";
+  if (filePath.endsWith(".rs")) return "rust";
+  if (filePath.endsWith(".rb")) return "ruby";
+  if (filePath.endsWith(".md")) return "markdown";
+  if (filePath.endsWith(".json")) return "json";
+  if (filePath.endsWith(".yaml") || filePath.endsWith(".yml")) return "yaml";
+  return undefined;
+}
+
+function languageGlobs(lang: string): string[] {
+  switch (lang) {
+    case "python": return ["*.py"];
+    case "typescript": return ["*.ts", "*.tsx"];
+    case "javascript": return ["*.js", "*.jsx", "*.mjs", "*.cjs"];
+    case "scala": return ["*.scala", "*.sc"];
+    case "java": return ["*.java"];
+    case "go": return ["*.go"];
+    case "rust": return ["*.rs"];
+    case "ruby": return ["*.rb"];
+    case "markdown": return ["*.md", "*.mdx"];
+    case "config": return ["*.json", "*.yaml", "*.yml", "*.toml"];
+    default: return [`*.${lang}`];
+  }
 }
