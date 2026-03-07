@@ -7,21 +7,25 @@ import io.circe.syntax._
 import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
+import org.http4s.dsl.impl.OptionalQueryParamDecoderMatcher
 
 import ix.memory.db.ArangoClient
+
+object LimitParam extends OptionalQueryParamDecoderMatcher[Int]("limit")
 
 class PatchRoutes(client: ArangoClient) {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
-    case GET -> Root / "v1" / "patches" =>
+    case GET -> Root / "v1" / "patches" :? LimitParam(limit) =>
+      val maxResults = limit.getOrElse(50)
       (for {
         patches <- client.query(
           """FOR p IN patches
             |  SORT p.rev DESC
-            |  LIMIT 50
+            |  LIMIT @limit
             |  RETURN { patch_id: p.patch_id, rev: p.rev, intent: p.data.intent,
             |           source_uri: p.data.source.uri, timestamp: p.data.timestamp }""".stripMargin,
-          Map.empty[String, AnyRef]
+          Map("limit" -> Int.box(maxResults).asInstanceOf[AnyRef])
         )
         resp <- Ok(patches.asJson)
       } yield resp).handleErrorWith(ErrorHandler.handle(_))

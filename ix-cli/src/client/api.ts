@@ -92,8 +92,11 @@ export class IxClient {
     return this.post("/v1/truth", { statement, parentIntent });
   }
 
-  async listPatches(): Promise<PatchSummary[]> {
-    return this.get("/v1/patches");
+  async listPatches(opts?: { limit?: number }): Promise<PatchSummary[]> {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    return this.get(`/v1/patches${qs ? `?${qs}` : ""}`);
   }
 
   async getPatch(id: string): Promise<unknown> {
