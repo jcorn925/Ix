@@ -185,10 +185,17 @@ class IngestionService(parserRouter: ParserRouter, writeApi: GraphWriteApi, quer
   }
 }
 
+case class SkipReasons(
+  unchanged:    Int = 0,
+  emptyFile:    Int = 0,
+  parseError:   Int = 0
+)
+
 case class IngestionResult(
   filesProcessed:  Int,
   patchesApplied:  Int,
   filesSkipped:    Int,
   entitiesCreated: Int,
-  latestRev:       Rev
+  latestRev:       Rev,
+  skipReasons:     SkipReasons = SkipReasons()
 )

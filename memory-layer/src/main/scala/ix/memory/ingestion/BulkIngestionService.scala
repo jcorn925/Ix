@@ -11,6 +11,10 @@ import io.circe.syntax._
 import ix.memory.db.{BulkWriteApi, CommitResult, CommitStatus, FileBatch, GraphQueryApi}
 import ix.memory.model._
 
+private[ingestion] sealed trait ParseOutcome
+private[ingestion] case class Parsed(batch: FileBatch)   extends ParseOutcome
+private[ingestion] case class Skipped(reason: String)    extends ParseOutcome
+
 /**
  * High-performance ingestion service that:
  * 1. Discovers files (with optional language filter)
@@ -41,11 +45,11 @@ class BulkIngestionService(
       batches    <- files.parTraverseN(parallelism) { f =>
         parseFile(f, hashMap).attempt
       }
-      validBatches = batches.collect { case Right(Some(b)) => b }
-      skippedCount = batches.count {
-        case Right(None) => true
-        case _ => false
-      }
+      validBatches = batches.collect { case Right(Parsed(b)) => b }
+      unchangedCount = batches.count { case Right(Skipped("unchanged")) => true; case _ => false }
+      emptyCount     = batches.count { case Right(Skipped("emptyFile")) => true; case _ => false }
+      errorCount     = batches.count { case Left(_) => true; case _ => false }
+      skippedCount   = unchangedCount + emptyCount + errorCount
       latestRev  <- queryApi.getLatestRev
       result     <- if (validBatches.isEmpty) IO.pure(CommitResult(latestRev, CommitStatus.Ok))
                     else bulkWriteApi.commitBatch(validBatches.toVector, latestRev.value)
@@ -54,22 +58,23 @@ class BulkIngestionService(
       patchesApplied  = validBatches.size,
       filesSkipped    = skippedCount,
       entitiesCreated = validBatches.flatMap(_.patch.ops.collect { case _: PatchOp.UpsertNode => 1 }).size,
-      latestRev       = result.newRev
+      latestRev       = result.newRev,
+      skipReasons     = SkipReasons(unchanged = unchangedCount, emptyFile = emptyCount, parseError = errorCount)
     )
   }
 
   /**
    * Parse a single file into a FileBatch (or None if unchanged).
    */
-  private def parseFile(filePath: Path, hashMap: Map[String, String]): IO[Option[FileBatch]] = {
+  private def parseFile(filePath: Path, hashMap: Map[String, String]): IO[ParseOutcome] = {
     for {
       bytes <- IO.blocking(Files.readAllBytes(filePath))
-      result <- if (bytes.isEmpty) IO.pure(None)
+      result <- if (bytes.isEmpty) IO.pure(Skipped("emptyFile"): ParseOutcome)
                 else {
                   val hash = sha256Bytes(bytes)
                   hashMap.get(filePath.toString) match {
                     case Some(existingHash) if existingHash == hash =>
-                      IO.pure(None)
+                      IO.pure(Skipped("unchanged"): ParseOutcome)
                     case _ =>
                       for {
                         source <- IO.blocking {
@@ -84,7 +89,7 @@ class BulkIngestionService(
                         patch = GraphPatchBuilder.build(filePath.toString, Some(hash), parseResult)
                         _ <- IO.fromEither(PatchValidator.validate(patch).left.map(msg => new IllegalStateException(msg)))
                         provenance = buildProvenanceMap(patch)
-                      } yield Some(FileBatch(filePath.toString, Some(hash), patch, provenance))
+                      } yield Parsed(FileBatch(filePath.toString, Some(hash), patch, provenance)): ParseOutcome
                   }
                 }
     } yield result

@@ -131,12 +131,19 @@ export interface PatchSummary {
   timestamp?: string;
 }
 
+export interface SkipReasons {
+  unchanged: number;
+  emptyFile: number;
+  parseError: number;
+}
+
 export interface IngestResult {
   filesProcessed: number;
   patchesApplied: number;
   filesSkipped?: number;
   entitiesCreated: number;
   latestRev: number;
+  skipReasons?: SkipReasons;
 }
 
 export interface HealthResponse {

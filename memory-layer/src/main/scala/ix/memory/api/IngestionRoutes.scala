@@ -18,7 +18,15 @@ object IngestRequest {
   implicit val encoder: Encoder[IngestRequest] = deriveEncoder[IngestRequest]
 }
 
-case class IngestResponse(filesProcessed: Int, patchesApplied: Int, filesSkipped: Int, entitiesCreated: Int, latestRev: Long)
+case class SkipReasonsResponse(unchanged: Int, emptyFile: Int, parseError: Int)
+
+object SkipReasonsResponse {
+  implicit val encoder: Encoder[SkipReasonsResponse] = deriveEncoder[SkipReasonsResponse]
+  implicit val decoder: Decoder[SkipReasonsResponse] = deriveDecoder[SkipReasonsResponse]
+}
+
+case class IngestResponse(filesProcessed: Int, patchesApplied: Int, filesSkipped: Int,
+  entitiesCreated: Int, latestRev: Long, skipReasons: SkipReasonsResponse)
 
 object IngestResponse {
   implicit val encoder: Encoder[IngestResponse] = deriveEncoder[IngestResponse]
@@ -41,7 +49,12 @@ class IngestionRoutes(ingestionService: IngestionService, bulkIngestionService: 
           patchesApplied  = result.patchesApplied,
           filesSkipped    = result.filesSkipped,
           entitiesCreated = result.entitiesCreated,
-          latestRev       = result.latestRev.value
+          latestRev       = result.latestRev.value,
+          skipReasons     = SkipReasonsResponse(
+            result.skipReasons.unchanged,
+            result.skipReasons.emptyFile,
+            result.skipReasons.parseError
+          )
         ))
       } yield resp).handleErrorWith(ErrorHandler.handle(_))
   }
