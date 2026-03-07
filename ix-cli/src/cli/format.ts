@@ -110,7 +110,7 @@ export function formatDecisions(nodes: any[], format: string): void {
   }
   for (const n of nodes) {
     const shortId = n.id.length > 8 ? n.id.slice(0, 8) : n.id;
-    const title = n.attrs?.title ?? n.name ?? "(untitled)";
+    const title = n.name || n.attrs?.title || n.attrs?.name || "(untitled)";
     const rationale = n.attrs?.rationale ?? "";
     console.log(
       `  ${chalk.blue("*")} ${chalk.dim(shortId)}  ${chalk.bold(title)}`
@@ -320,8 +320,8 @@ export function formatEdgeResults(nodes: any[], relation: string, symbol: string
   console.log(`${chalk.bold(relation)} of ${chalk.cyan(symbol)}:`);
   for (const n of nodes) {
     const shortId = n.id?.slice(0, 8) ?? "";
-    const name = n.attrs?.name ?? n.name ?? n.id;
-    console.log(`  ${chalk.cyan(n.kind)}  ${chalk.dim(shortId)}  ${name}`);
+    const name = n.name || n.attrs?.name || n.id;
+    console.log(`  ${chalk.cyan((n.kind ?? "").padEnd(10))}  ${chalk.dim(shortId)}  ${chalk.bold(name)}`);
   }
 }
 
