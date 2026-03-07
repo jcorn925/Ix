@@ -9,7 +9,7 @@ import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
 
-import ix.memory.ingestion.IngestionService
+import ix.memory.ingestion.{BulkIngestionService, IngestionService}
 
 case class IngestRequest(path: String, language: Option[String], recursive: Option[Boolean])
 
@@ -25,7 +25,7 @@ object IngestResponse {
   implicit val decoder: Decoder[IngestResponse] = deriveDecoder[IngestResponse]
 }
 
-class IngestionRoutes(ingestionService: IngestionService) {
+class IngestionRoutes(ingestionService: IngestionService, bulkIngestionService: BulkIngestionService) {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "v1" / "ingest" =>
@@ -35,7 +35,7 @@ class IngestionRoutes(ingestionService: IngestionService) {
           new IllegalArgumentException("Path traversal not allowed")
         )
         path      = Paths.get(body.path)
-        result   <- ingestionService.ingestPath(path, body.language, body.recursive.getOrElse(false))
+        result   <- bulkIngestionService.ingestPath(path, body.language, body.recursive.getOrElse(false))
         resp     <- Ok(IngestResponse(
           filesProcessed  = result.filesProcessed,
           patchesApplied  = result.patchesApplied,

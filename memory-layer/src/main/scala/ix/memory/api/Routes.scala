@@ -11,14 +11,15 @@ import org.http4s.dsl.io._
 import ix.memory.conflict.ConflictService
 import ix.memory.context.ContextService
 import ix.memory.db.{ArangoClient, GraphQueryApi, GraphWriteApi}
-import ix.memory.ingestion.IngestionService
+import ix.memory.ingestion.{BulkIngestionService, IngestionService}
 
 object Routes {
 
   def all(
-    contextService:   ContextService,
-    ingestionService: IngestionService,
-    queryApi:         GraphQueryApi,
+    contextService:       ContextService,
+    ingestionService:     IngestionService,
+    bulkIngestionService: BulkIngestionService,
+    queryApi:             GraphQueryApi,
     writeApi:         GraphWriteApi,
     conflictService:  ConflictService,
     client:           ArangoClient
@@ -30,7 +31,7 @@ object Routes {
     }
 
     val contextRoutes   = new ContextRoutes(contextService).routes
-    val ingestionRoutes = new IngestionRoutes(ingestionService).routes
+    val ingestionRoutes = new IngestionRoutes(ingestionService, bulkIngestionService).routes
     val entityRoutes    = new EntityRoutes(queryApi).routes
     val diffRoutes      = new DiffRoutes(queryApi).routes
     val conflictRoutes  = new ConflictRoutes(conflictService).routes
