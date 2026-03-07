@@ -22,6 +22,7 @@ import { registerImportsCommand } from "./commands/imports.js";
 import { registerContainsCommand } from "./commands/contains.js";
 import { registerStatsCommand } from "./commands/stats.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
+import { registerDependsCommand } from "./commands/depends.js";
 
 const program = new Command();
 program
@@ -51,6 +52,7 @@ registerImportsCommand(program);
 registerContainsCommand(program);
 registerStatsCommand(program);
 registerDoctorCommand(program);
+registerDependsCommand(program);
 
 program
   .command("mcp-start")
