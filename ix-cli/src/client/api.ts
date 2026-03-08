@@ -79,6 +79,18 @@ export class IxClient {
     return this.get(`/v1/entity/${id}`);
   }
 
+  async expandByName(
+    name: string,
+    opts?: { direction?: string; predicates?: string[]; kinds?: string[] }
+  ): Promise<{ nodes: any[]; edges: any[] }> {
+    return this.post("/v1/expand-by-name", {
+      name,
+      direction: opts?.direction ?? "both",
+      predicates: opts?.predicates,
+      kinds: opts?.kinds,
+    });
+  }
+
   async expand(
     id: string,
     opts?: { direction?: string; predicates?: string[]; hops?: number }
