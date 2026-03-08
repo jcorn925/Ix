@@ -74,7 +74,8 @@ class ScalaParser extends Parser {
             entities = entities :+ ParsedEntity(
               name      = name,
               kind      = NodeKind.Class,
-              attrs     = Map("scala_kind" -> Json.fromString("case_class"), "language" -> Json.fromString("scala")),
+              attrs     = Map("scala_kind" -> Json.fromString("case_class"), "language" -> Json.fromString("scala"),
+                "signature" -> Json.fromString(extractTypeSignature(trimmed)), "visibility" -> Json.fromString(extractVisibility(trimmed))),
               lineStart = lineNum,
               lineEnd   = endLine
             )
@@ -91,7 +92,8 @@ class ScalaParser extends Parser {
                 entities = entities :+ ParsedEntity(
                   name      = name,
                   kind      = NodeKind.Trait,
-                  attrs     = Map("scala_kind" -> Json.fromString("trait"), "language" -> Json.fromString("scala")),
+                  attrs     = Map("scala_kind" -> Json.fromString("trait"), "language" -> Json.fromString("scala"),
+                    "signature" -> Json.fromString(extractTypeSignature(trimmed)), "visibility" -> Json.fromString(extractVisibility(trimmed))),
                   lineStart = lineNum,
                   lineEnd   = endLine
                 )
@@ -108,7 +110,8 @@ class ScalaParser extends Parser {
                     entities = entities :+ ParsedEntity(
                       name      = name,
                       kind      = NodeKind.Object,
-                      attrs     = Map("scala_kind" -> Json.fromString("object"), "language" -> Json.fromString("scala")),
+                      attrs     = Map("scala_kind" -> Json.fromString("object"), "language" -> Json.fromString("scala"),
+                        "signature" -> Json.fromString(extractTypeSignature(trimmed)), "visibility" -> Json.fromString(extractVisibility(trimmed))),
                       lineStart = lineNum,
                       lineEnd   = endLine
                     )
@@ -125,7 +128,8 @@ class ScalaParser extends Parser {
                         entities = entities :+ ParsedEntity(
                           name      = name,
                           kind      = NodeKind.Class,
-                          attrs     = Map("scala_kind" -> Json.fromString("class"), "language" -> Json.fromString("scala")),
+                          attrs     = Map("scala_kind" -> Json.fromString("class"), "language" -> Json.fromString("scala"),
+                            "signature" -> Json.fromString(extractTypeSignature(trimmed)), "visibility" -> Json.fromString(extractVisibility(trimmed))),
                           lineStart = lineNum,
                           lineEnd   = endLine
                         )
@@ -260,6 +264,14 @@ class ScalaParser extends Parser {
       }
     }
     calls
+  }
+
+  /** Extract a type signature (trait/class/object), stripping body braces. */
+  private def extractTypeSignature(trimmedLine: String): String = {
+    val cleaned = trimmedLine
+      .replaceAll("""\s*\{\s*$""", "")
+      .trim
+    cleaned.take(120)
   }
 
   /** Extract a clean signature from a trimmed line, stripping trailing body markers. */
