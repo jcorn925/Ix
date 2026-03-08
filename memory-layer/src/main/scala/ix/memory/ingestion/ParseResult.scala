@@ -8,7 +8,8 @@ case class ParsedEntity(
   kind:      NodeKind,
   attrs:     Map[String, Json],
   lineStart: Int,
-  lineEnd:   Int
+  lineEnd:   Int,
+  contentFingerprint: Option[String] = None
 )
 
 case class ParsedRelationship(
