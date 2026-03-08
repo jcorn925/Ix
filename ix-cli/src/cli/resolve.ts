@@ -73,7 +73,8 @@ export async function resolveEntity(
 }
 
 /**
- * Print the resolved target before showing results.
+ * Print the resolved target before showing results (text mode only).
+ * Callers should skip this when format === "json" to keep JSON strict.
  */
 export function printResolved(target: ResolvedEntity): void {
   const shortId = target.id.slice(0, 8);
@@ -81,4 +82,10 @@ export function printResolved(target: ResolvedEntity): void {
     ? chalk.dim(` (${target.resolutionMode})`)
     : "";
   console.log(`${chalk.dim("Resolved:")} ${chalk.cyan(target.kind)} ${chalk.dim(shortId)} ${chalk.bold(target.name)}${modeStr}\n`);
+}
+
+/** Check if a string looks like a raw UUID (not a human-readable name). */
+export function isRawId(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(s)
+    || /^[0-9a-f]{32,}$/i.test(s);
 }

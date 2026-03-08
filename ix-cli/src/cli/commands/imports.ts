@@ -17,7 +17,7 @@ export function registerImportsCommand(program: Command): void {
       const limit = parseInt(opts.limit, 10);
       const target = await resolveEntity(client, symbol, ["file", "module", "class"], opts);
       if (!target) return;
-      printResolved(target);
+      if (opts.format !== "json") printResolved(target);
       const result = await client.expand(target.id, { direction: "out", predicates: ["IMPORTS"] });
       formatEdgeResults(result.nodes.slice(0, limit), "imports", target.name, opts.format, target, "graph");
     });
@@ -34,7 +34,7 @@ export function registerImportsCommand(program: Command): void {
       const limit = parseInt(opts.limit, 10);
       const target = await resolveEntity(client, symbol, ["file", "module", "class"], opts);
       if (!target) return;
-      printResolved(target);
+      if (opts.format !== "json") printResolved(target);
       const result = await client.expand(target.id, { direction: "in", predicates: ["IMPORTS"] });
       formatEdgeResults(result.nodes.slice(0, limit), "imported-by", target.name, opts.format, target, "graph");
     });

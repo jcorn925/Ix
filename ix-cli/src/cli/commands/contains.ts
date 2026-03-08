@@ -17,7 +17,7 @@ export function registerContainsCommand(program: Command): void {
       const limit = parseInt(opts.limit, 10);
       const target = await resolveEntity(client, symbol, ["class", "object", "trait", "interface", "module", "file"], opts);
       if (!target) return;
-      printResolved(target);
+      if (opts.format !== "json") printResolved(target);
       const result = await client.expand(target.id, { direction: "out", predicates: ["CONTAINS"] });
       const limited = result.nodes.slice(0, limit);
       formatEdgeResults(limited, "contains", target.name, opts.format, target, "graph");

@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import chalk from "chalk";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint } from "../config.js";
-import { resolveEntity, printResolved } from "../resolve.js";
+import { resolveEntity, printResolved, isRawId } from "../resolve.js";
 
 export function registerDependsCommand(program: Command): void {
   program
@@ -49,28 +49,48 @@ export function registerDependsCommand(program: Command): void {
 
       const allDependents = [...callers, ...importers].slice(0, limit);
 
+      const mapDependent = (d: any) => {
+        const name = d.name || d.attrs?.name || "";
+        const resolved = !!name && !isRawId(name);
+        return {
+          name: resolved ? name : undefined,
+          kind: d.kind,
+          id: resolved ? d.id : undefined,
+          resolved,
+          via: d.via,
+          path: d.provenance?.source_uri ?? d.provenance?.sourceUri ?? d.attrs?.path ?? undefined,
+          ...(resolved ? { suggestedCommand: `ix explain "${name}"` } : { rawId: d.id }),
+        };
+      };
+
       if (opts.format === "json") {
-        console.log(JSON.stringify({
-          resultSource: "graph" as const,
+        const results = allDependents.map(mapDependent);
+        const unresolvedCount = results.filter(r => !r.resolved).length;
+        const output: any = {
           resolvedTarget: target,
-          directDependents: allDependents.map((d: any) => ({
-            id: d.id,
-            kind: d.kind,
-            name: d.name || d.attrs?.name || d.id,
-            via: d.via,
-          })),
+          resolutionMode: target.resolutionMode,
+          resultSource: "graph",
+          results,
           summary: {
-            direct: allDependents.length,
+            total: allDependents.length,
+            resolved: allDependents.length - unresolvedCount,
+            unresolved: unresolvedCount,
             viaCalls: callers.length,
             viaImports: importers.length,
           },
-        }, null, 2));
+        };
+        if (allDependents.length === 0) {
+          output.diagnostics = [{ code: "no_edges", message: `No CALLS or IMPORTS edges found pointing to resolved entity.` }];
+        } else if (unresolvedCount > 0) {
+          output.diagnostics = [{ code: "dangling_reference_filtered", message: `${unresolvedCount} dependent(s) could not be resolved to named entities.` }];
+        }
+        console.log(JSON.stringify(output, null, 2));
         return;
       }
 
       printResolved(target);
       if (allDependents.length === 0) {
-        console.log(`No dependents found for "${target.name}".`);
+        console.log(`Resolved to ${target.kind} ${target.name}; no CALLS/IMPORTS edges found at current graph state.`);
         return;
       }
 
@@ -78,8 +98,12 @@ export function registerDependsCommand(program: Command): void {
         console.log(chalk.bold(`  via CALLS (${callers.length}):`));
         for (const d of callers) {
           const shortId = d.id?.slice(0, 8) ?? "";
-          const name = d.name || d.attrs?.name || d.id;
-          console.log(`    ${chalk.cyan((d.kind ?? "").padEnd(10))} ${chalk.dim(shortId)}  ${name}`);
+          const name = d.name || d.attrs?.name || "";
+          if (!name || isRawId(name)) {
+            console.log(`    ${chalk.cyan((d.kind ?? "").padEnd(10))} ${chalk.dim(shortId)}  ${chalk.dim("(unresolved)")}`);
+          } else {
+            console.log(`    ${chalk.cyan((d.kind ?? "").padEnd(10))} ${chalk.dim(shortId)}  ${name}`);
+          }
         }
       }
 
@@ -87,8 +111,12 @@ export function registerDependsCommand(program: Command): void {
         console.log(chalk.bold(`  via IMPORTS (${importers.length}):`));
         for (const d of importers) {
           const shortId = d.id?.slice(0, 8) ?? "";
-          const name = d.name || d.attrs?.name || d.id;
-          console.log(`    ${chalk.cyan((d.kind ?? "").padEnd(10))} ${chalk.dim(shortId)}  ${name}`);
+          const name = d.name || d.attrs?.name || "";
+          if (!name || isRawId(name)) {
+            console.log(`    ${chalk.cyan((d.kind ?? "").padEnd(10))} ${chalk.dim(shortId)}  ${chalk.dim("(unresolved)")}`);
+          } else {
+            console.log(`    ${chalk.cyan((d.kind ?? "").padEnd(10))} ${chalk.dim(shortId)}  ${name}`);
+          }
         }
       }
 

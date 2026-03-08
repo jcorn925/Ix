@@ -313,19 +313,58 @@ export function formatLocateResults(results: LocateResult[], format: string): vo
 export function formatEdgeResults(
   nodes: any[], relation: string, symbol: string, format: string,
   resolvedTarget?: { id: string; kind: string; name: string; resolutionMode?: string },
-  source?: ResultSource
+  source?: ResultSource,
+  diagnostics?: Diagnostic[]
 ): void {
+  // Check for UUID-like names that indicate unresolved references
+  const isRawId = (s: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s) || /^[0-9a-f]{32,}$/i.test(s);
+
   if (format === "json") {
-    const output: any = { results: nodes, resultSource: source ?? "graph" };
+    const results = nodes.map((n: any) => {
+      const name = n.name || n.attrs?.name || "";
+      const resolved = !!name && !isRawId(name);
+      const ref: any = {
+        name: resolved ? name : undefined,
+        kind: n.kind ?? undefined,
+        id: resolved ? n.id : undefined,
+        resolved,
+        path: n.provenance?.source_uri ?? n.provenance?.sourceUri ?? n.attrs?.path ?? undefined,
+      };
+      if (!resolved && n.id) {
+        ref.rawId = n.id;
+        ref.diagnostic = "unresolved_call_target";
+      }
+      return ref;
+    });
+
+    const output: any = {
+      results,
+      resultSource: source ?? "graph",
+    };
     if (resolvedTarget) {
       output.resolvedTarget = resolvedTarget;
       output.resolutionMode = resolvedTarget.resolutionMode ?? "exact";
     }
+    if (nodes.length === 0) {
+      output.diagnostics = diagnostics ?? [{ code: "no_edges", message: `No ${relation} edges found for resolved entity.` }];
+    } else if (diagnostics && diagnostics.length > 0) {
+      output.diagnostics = diagnostics;
+    }
+    const unresolvedCount = results.filter((r: any) => !r.resolved).length;
+    if (unresolvedCount > 0) {
+      output.diagnostics = [
+        ...(output.diagnostics ?? []),
+        { code: "dangling_reference_filtered", message: `${unresolvedCount} result(s) could not be resolved to named entities.` },
+      ];
+    }
+    output.summary = { total: results.length, resolved: results.length - unresolvedCount, unresolved: unresolvedCount };
     console.log(JSON.stringify(output, null, 2));
     return;
   }
   if (nodes.length === 0) {
-    console.log(`No ${relation} found for "${symbol}".`);
+    const reason = diagnostics?.[0]?.message ?? `No ${relation} found for "${symbol}".`;
+    console.log(reason);
     return;
   }
   console.log(`${chalk.bold(relation)} of ${chalk.cyan(symbol)}:`);
@@ -333,9 +372,13 @@ export function formatEdgeResults(
     console.log(chalk.dim(`Source: ${source}`));
   }
   for (const n of nodes) {
+    const name = n.name || n.attrs?.name || "";
     const shortId = n.id?.slice(0, 8) ?? "";
-    const name = n.name || n.attrs?.name || n.id;
-    console.log(`  ${chalk.cyan((n.kind ?? "").padEnd(10))}  ${chalk.dim(shortId)}  ${chalk.bold(name)}`);
+    if (!name || isRawId(name)) {
+      console.log(`  ${chalk.cyan((n.kind ?? "").padEnd(10))}  ${chalk.dim(shortId)}  ${chalk.dim("(unresolved)")}`);
+    } else {
+      console.log(`  ${chalk.cyan((n.kind ?? "").padEnd(10))}  ${chalk.dim(shortId)}  ${chalk.bold(name)}`);
+    }
   }
 }
 
@@ -355,6 +398,31 @@ export function formatConflicts(conflicts: any[], format: string): void {
   }
 }
 
+/** A resolved or unresolved reference to a related entity. */
+export interface EntityRef {
+  name: string;
+  kind?: string;
+  id?: string;
+  resolved: boolean;
+  path?: string;
+  lineStart?: number;
+  lineEnd?: number;
+  suggestedCommand?: string;
+}
+
+export type DiagnosticCode =
+  | "unresolved_call_target"
+  | "parser_gap_suspected"
+  | "dangling_reference_filtered"
+  | "ambiguous_resolution"
+  | "no_edges"
+  | "text_fallback_used";
+
+export interface Diagnostic {
+  code: DiagnosticCode;
+  message: string;
+}
+
 export interface ExplainResult {
   kind: string;
   name: string;
@@ -368,12 +436,36 @@ export interface ExplainResult {
   historyLength: number;
   signature?: string;
   docstring?: string;
-  callList?: string[];
+  callList?: EntityRef[];
+  diagnostics?: Diagnostic[];
 }
 
 export function formatExplain(result: ExplainResult, format: string): void {
   if (format === "json") {
-    console.log(JSON.stringify({ ...result, resultSource: "graph" }, null, 2));
+    const output: any = {
+      resolvedTarget: { id: result.id, kind: result.kind, name: result.name },
+      resolutionMode: "exact",
+      resultSource: "graph",
+      result: {
+        kind: result.kind,
+        name: result.name,
+        id: result.id,
+        file: result.file,
+        container: result.container,
+        introducedRev: result.introducedRev,
+        calledBy: result.calledBy,
+        calls: result.calls,
+        contains: result.contains,
+        historyLength: result.historyLength,
+        signature: result.signature,
+        docstring: result.docstring,
+        callList: result.callList,
+      },
+    };
+    if (result.diagnostics && result.diagnostics.length > 0) {
+      output.diagnostics = result.diagnostics;
+    }
+    console.log(JSON.stringify(output, null, 2));
     return;
   }
   const shortId = result.id.slice(0, 8);
@@ -396,11 +488,19 @@ export function formatExplain(result: ExplainResult, format: string): void {
   if (result.callList && result.callList.length > 0) {
     console.log(`  ${chalk.dim("calls:")}`);
     for (const c of result.callList) {
-      console.log(`    ${c}`);
+      const label = c.resolved
+        ? c.name
+        : chalk.dim(`${c.name} (unresolved)`);
+      console.log(`    ${label}`);
     }
   } else if (result.calls > 0) {
     console.log(`  ${chalk.dim("calls")} ${result.calls} methods`);
   }
   if (result.contains > 0) console.log(`  ${chalk.dim("contains")} ${result.contains} members`);
   if (result.historyLength > 0) console.log(`  ${chalk.dim("history")} ${result.historyLength} patches`);
+  if (result.diagnostics && result.diagnostics.length > 0) {
+    for (const d of result.diagnostics) {
+      console.log(`  ${chalk.dim(`[${d.code}]`)} ${d.message}`);
+    }
+  }
 }

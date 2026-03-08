@@ -22,7 +22,7 @@ export function registerCallersCommand(program: Command): void {
       const limit = parseInt(opts.limit, 10);
       const target = await resolveEntity(client, symbol, ["method", "function"], opts);
       if (!target) return;
-      printResolved(target);
+      if (opts.format !== "json") printResolved(target);
       // Use expandByName for cross-file resolution
       const result = await client.expandByName(target.name, {
         direction: "in",
@@ -93,7 +93,7 @@ export function registerCallersCommand(program: Command): void {
       const calleeLimit = parseInt(opts.limit, 10);
       const target = await resolveEntity(client, symbol, ["method", "function"], opts);
       if (!target) return;
-      printResolved(target);
+      if (opts.format !== "json") printResolved(target);
       // Use expandByName for cross-file resolution
       const result = await client.expandByName(target.name, {
         direction: "out",

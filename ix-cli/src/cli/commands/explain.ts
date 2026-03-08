@@ -1,8 +1,8 @@
 import type { Command } from "commander";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint } from "../config.js";
-import { formatExplain, type ExplainResult } from "../format.js";
-import { resolveEntity } from "../resolve.js";
+import { formatExplain, type ExplainResult, type EntityRef, type Diagnostic } from "../format.js";
+import { resolveEntity, isRawId } from "../resolve.js";
 
 export function registerExplainCommand(program: Command): void {
   program
@@ -46,19 +46,51 @@ export function registerExplainCommand(program: Command): void {
       const signature = node.attrs?.signature || node.attrs?.summary;
       const docstring = node.attrs?.docstring || node.attrs?.description;
 
-      // Get actual callee names from outgoing CALLS edges
+      // Get actual callee details from outgoing CALLS edges
       const calleeEdges = callEdges.filter((e: any) => e.src === target.id);
-      let callList: string[] | undefined;
+      const diagnostics: Diagnostic[] = [];
+      let callList: EntityRef[] | undefined;
       if (calleeEdges.length > 0 && calleeEdges.length <= 20) {
-        const calleeNames = await Promise.all(
-          calleeEdges.map(async (e: any) => {
+        const refs = await Promise.all(
+          calleeEdges.map(async (e: any): Promise<EntityRef> => {
             try {
               const callee = await client.entity(e.dst);
-              return (callee.node as any).name || e.dst;
-            } catch { return e.dst; }
+              const calleeNode = callee.node as any;
+              const name = calleeNode.name || calleeNode.attrs?.name || "";
+              if (!name || isRawId(name)) {
+                return {
+                  name: name || e.dst,
+                  kind: calleeNode.kind,
+                  resolved: false,
+                  suggestedCommand: `ix text "${e.dst.slice(0, 8)}"`,
+                };
+              }
+              return {
+                name,
+                kind: calleeNode.kind,
+                id: e.dst,
+                resolved: true,
+                path: calleeNode.provenance?.source_uri ?? calleeNode.provenance?.sourceUri,
+                suggestedCommand: `ix explain "${name}"`,
+              };
+            } catch {
+              return {
+                name: e.dst,
+                resolved: false,
+                diagnostic: "unresolved_call_target",
+                suggestedCommand: `ix text "${e.dst.slice(0, 8)}"`,
+              } as EntityRef;
+            }
           })
         );
-        callList = calleeNames;
+        callList = refs;
+        const unresolvedCount = refs.filter(r => !r.resolved).length;
+        if (unresolvedCount > 0) {
+          diagnostics.push({
+            code: "unresolved_call_target",
+            message: `${unresolvedCount} callee(s) could not be resolved to named entities. Use ix text to locate them.`,
+          });
+        }
       }
 
       const result: ExplainResult = {
@@ -75,6 +107,7 @@ export function registerExplainCommand(program: Command): void {
         signature,
         docstring,
         callList,
+        diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
       };
 
       formatExplain(result, opts.format);
