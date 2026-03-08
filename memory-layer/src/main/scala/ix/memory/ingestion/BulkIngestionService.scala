@@ -7,6 +7,8 @@ import cats.syntax.all._
 import cats.effect.implicits._
 import io.circe.Json
 import io.circe.syntax._
+import org.typelevel.log4cats.slf4j.Slf4jLogger
+import org.typelevel.log4cats.Logger
 
 import ix.memory.db.{BulkWriteApi, CommitResult, CommitStatus, FileBatch, GraphQueryApi}
 import ix.memory.model._
@@ -31,6 +33,7 @@ class BulkIngestionService(
   private val parallelism = Runtime.getRuntime.availableProcessors.max(2)
   private val MaxFileBytes: Long = 1024 * 1024  // 1 MB
   private val mapper = new com.fasterxml.jackson.databind.ObjectMapper()
+  private val logger: Logger[IO] = Slf4jLogger.getLoggerFromName[IO]("ix.ingestion")
 
   /**
    * Ingest files under a path using parallel parsing and bulk writes.
@@ -43,14 +46,17 @@ class BulkIngestionService(
     for {
       files      <- discoverFiles(path, language, recursive)
       hashMap    <- loadExistingHashes(files)
-      batches    <- files.parTraverseN(parallelism) { f =>
-        parseFile(f, hashMap).attempt
+      outcomes   <- files.parTraverseN(parallelism) { f =>
+        parseFile(f, hashMap).handleErrorWith { err =>
+          logger.warn(s"Parse error: ${f.toString} — ${err.getMessage}") *>
+            IO.pure(Skipped("parseError"): ParseOutcome)
+        }
       }
-      validBatches = batches.collect { case Right(Parsed(b)) => b }
-      unchangedCount = batches.count { case Right(Skipped("unchanged")) => true; case _ => false }
-      emptyCount     = batches.count { case Right(Skipped("emptyFile")) => true; case _ => false }
-      errorCount     = batches.count { case Left(_) => true; case _ => false }
-      tooLargeCount  = batches.count { case Right(Skipped("tooLarge")) => true; case _ => false }
+      validBatches   = outcomes.collect { case Parsed(b) => b }
+      unchangedCount = outcomes.count { case Skipped("unchanged") => true; case _ => false }
+      emptyCount     = outcomes.count { case Skipped("emptyFile") => true; case _ => false }
+      errorCount     = outcomes.count { case Skipped("parseError") => true; case _ => false }
+      tooLargeCount  = outcomes.count { case Skipped("tooLarge") => true; case _ => false }
       skippedCount   = unchangedCount + emptyCount + errorCount + tooLargeCount
       latestRev  <- queryApi.getLatestRev
       result     <- if (validBatches.isEmpty) IO.pure(CommitResult(latestRev, CommitStatus.Ok))
