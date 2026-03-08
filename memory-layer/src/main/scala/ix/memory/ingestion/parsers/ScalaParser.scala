@@ -21,6 +21,24 @@ class ScalaParser extends Parser {
   private val ObjectPattern: Regex     = """^\s*(?:sealed\s+|abstract\s+|private\s+|protected\s+)*(?:case\s+)?object\s+(\w+)""".r
   private val DefPattern: Regex        = """^\s*(?:override\s+)?(?:private(?:\[\w+\])?\s+|protected(?:\[\w+\])?\s+)?(?:final\s+)?def\s+(\w+)""".r
   private val ImportPattern: Regex     = """^\s*import\s+(.+)$""".r
+  private val CallPattern: Regex      = """(?:(?:this|super)\.)?\b(\w+)\s*(?:\[.*?\])?\s*\(""".r
+
+  private val ScalaBuiltins: Set[String] = Set(
+    "println", "print", "require", "assert", "assume",
+    "Some", "None", "Option", "List", "Map", "Set", "Vector",
+    "Right", "Left", "Try", "Success", "Failure",
+    "Future", "IO", "pure", "flatMap", "map", "filter",
+    "foreach", "fold", "foldLeft", "foldRight",
+    "toString", "hashCode", "equals", "getClass",
+    "apply", "unapply", "copy", "andThen", "compose",
+    "getOrElse", "orElse", "contains", "exists", "forall",
+    "collect", "traverse", "sequence", "attempt", "handleErrorWith",
+    "raiseError", "blocking", "delay", "suspend", "async",
+    "mkString", "toList", "toVector", "toSet", "toMap",
+    "head", "tail", "size", "length", "isEmpty", "nonEmpty",
+    "take", "drop", "slice", "zip", "zipWithIndex",
+    "sortBy", "groupBy", "distinct", "flatten"
+  )
 
   def parse(fileName: String, source: String): ParseResult = {
     val lines = source.split("\n", -1)
@@ -153,6 +171,10 @@ class ScalaParser extends Parser {
             )
 
             relationships = relationships :+ ParsedRelationship(edgeSrc, funcName, edgePredicate)
+
+            // Extract CALLS from method/function body
+            val callsInFunc = extractCalls(lines, idx, endLine, funcName)
+            relationships = relationships ++ callsInFunc
           }
         }
 
@@ -218,6 +240,26 @@ class ScalaParser extends Parser {
     }
 
     if (foundOpen) Some(lines.length) else None
+  }
+
+  /** Extract CALLS relationships from a method/function body. */
+  private def extractCalls(lines: Array[String], startIdx: Int, endIdx: Int, callerName: String): Vector[ParsedRelationship] = {
+    var calls = Vector.empty[ParsedRelationship]
+    val seen = scala.collection.mutable.Set.empty[String]
+    for (i <- (startIdx + 1) until endIdx.min(lines.length)) {
+      val line = lines(i).trim
+      if (!line.startsWith("//") && !line.startsWith("*")) {
+        CallPattern.findAllMatchIn(line).foreach { m =>
+          val callee = m.group(1)
+          // Only include lowercase-starting identifiers (methods/functions, not types)
+          if (callee != callerName && !ScalaBuiltins.contains(callee) && !seen.contains(callee) && callee.head.isLower) {
+            seen += callee
+            calls = calls :+ ParsedRelationship(callerName, callee, "CALLS")
+          }
+        }
+      }
+    }
+    calls
   }
 
   /** Extract a clean signature from a trimmed line, stripping trailing body markers. */
