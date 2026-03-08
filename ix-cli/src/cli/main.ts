@@ -24,6 +24,8 @@ import { registerStatsCommand } from "./commands/stats.js";
 import { registerDoctorCommand } from "./commands/doctor.js";
 import { registerDependsCommand } from "./commands/depends.js";
 import { registerReadCommand } from "./commands/read.js";
+import { registerInventoryCommand } from "./commands/inventory.js";
+import { registerImpactCommand } from "./commands/impact.js";
 
 const program = new Command();
 program
@@ -55,6 +57,8 @@ registerStatsCommand(program);
 registerDoctorCommand(program);
 registerDependsCommand(program);
 registerReadCommand(program);
+registerInventoryCommand(program);
+registerImpactCommand(program);
 
 program
   .command("mcp-start")
