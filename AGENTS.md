@@ -53,7 +53,28 @@ Each result entity in `results` includes:
 
 ## Command routing
 
-### Finding code
+### Start here — high-level workflow commands
+
+These are the preferred entry points. Use them first; drop to low-level commands only when you need fine-grained control.
+
+```
+ix impact <target> --format json          # Blast radius / dependency consequences
+ix rank --by <metric> --kind <kind> --top N --format json   # Hotspot discovery
+ix overview <target> --format json        # One-shot structural summary of a component
+ix inventory --kind <kind> --format json  # Scoped entity listing
+```
+
+**When to use which:**
+- "What breaks if I change X?" → `ix impact X`
+- "What are the most important classes?" → `ix rank --by dependents --kind class --top 10`
+- "Tell me about UserService" → `ix overview UserService`
+- "List all functions in auth.py" → `ix inventory --kind function --path auth.py`
+
+### Low-level structural primitives
+
+Useful for debugging, fine-grained inspection, or when high-level commands don't cover your case.
+
+#### Finding code
 ```
 ix search <term> --format json --limit 10
 ix text <term> --format json --language python
@@ -61,13 +82,13 @@ ix locate <symbol> --format json
 ix read <file:lines>
 ```
 
-### Understanding entities
+#### Understanding entities
 ```
 ix explain <symbol> --format json
 ix entity <id> --format json
 ```
 
-### Navigating relationships
+#### Navigating relationships
 ```
 ix callers <symbol> --format json
 ix callees <symbol> --format json
@@ -93,10 +114,9 @@ ix diff <from> <to> --format json
 
 ## Chaining pattern
 
-1. Search: `ix search MyClass --format json --limit 5`
-2. Pick the result with `resolved: true` and extract `id`
-3. Drill in: `ix explain MyClass --format json` or `ix entity <id> --format json`
-4. Navigate: `ix callers MyClass --format json`
+1. Start broad: `ix overview MyClass --format json` or `ix impact MyClass --format json`
+2. If you need more detail, drill in: `ix explain MyClass --format json` or `ix entity <id> --format json`
+3. Navigate edges: `ix callers MyClass --format json`
 
 ## Handling unresolved references
 

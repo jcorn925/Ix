@@ -12,6 +12,7 @@ MCP is still present for compatibility, but the primary interface is `ix` CLI co
 
 - File ingestion: `.py`, `.ts`, `.tsx`, `.scala`, `.sc`, `.json`, `.yaml`, `.yml`, `.toml`, `.md`
 - Graph navigation: search, explain, callers/callees, imports/imported-by, contains, depends
+- High-level workflow: impact analysis, hotspot ranking, one-shot overviews, scoped inventory
 - Decision and intent tracking: `ix decide`, `ix decisions`, `ix truth ...`
 - Provenance + history: `ix patches`, `ix history`, `ix diff`, `ix conflicts`
 - GitHub ingestion: `ix ingest --github owner/repo` (issues/PRs/commits/comments)
@@ -81,8 +82,13 @@ ix ingest ./src --recursive
 All commands support `--format json`.
 
 ```bash
-ix status
-ix ingest ./src --recursive
+# Start with high-level workflow commands
+ix overview UserService                          # one-shot summary
+ix impact UserService                            # what depends on it
+ix rank --by dependents --kind class --top 10    # most important classes
+ix inventory --kind function --path "src/"       # list functions
+
+# Low-level primitives for fine-grained inspection
 ix search IngestionService --kind class --format json
 ix explain IngestionService --format json
 ix callers parseFile --format json

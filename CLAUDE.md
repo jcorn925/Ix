@@ -21,7 +21,22 @@ All commands support `--format json` for machine-readable output. Use JSON when 
 
 Use bounded, composable CLI commands — never broad queries.
 
-### Finding & Understanding Code
+### High-Level Workflow Commands (Preferred)
+
+Start here. These aggregate multiple graph operations into single bounded responses.
+
+| Goal | Command | Example |
+|---|---|---|
+| Blast radius / impact | `ix impact` | `ix impact UserService --format json` |
+| Hotspot discovery | `ix rank` | `ix rank --by dependents --kind class --top 10` |
+| One-shot summary | `ix overview` | `ix overview IngestionService --format json` |
+| Scoped entity listing | `ix inventory` | `ix inventory --kind function --path auth.py` |
+
+### Low-Level Primitives
+
+Underlying structural commands — useful for debugging or fine-grained inspection.
+
+#### Finding & Understanding Code
 | Goal | Command | Example |
 |---|---|---|
 | Find entity by name | `ix search` | `ix search IngestionService --kind class --limit 10` |
@@ -31,7 +46,7 @@ Use bounded, composable CLI commands — never broad queries.
 | Fast text search | `ix text` | `ix text "verify_token" --language python --limit 20` |
 | Find symbol (graph+text) | `ix locate` | `ix locate AuthProvider --limit 10` |
 
-### Navigating Relationships
+#### Navigating Relationships
 | Goal | Command | Example |
 |---|---|---|
 | What calls a function | `ix callers` | `ix callers verify_token --format json` |
@@ -64,24 +79,28 @@ Use bounded, composable CLI commands — never broad queries.
 
 **"How does ingestion work?"**
 ```bash
-ix search IngestionService --kind class --format json
-ix explain IngestionService --format json
+ix overview IngestionService --format json    # start here
+# If you need more detail:
 ix contains IngestionService --format json
 ix callees parseFile --format json
 ```
 
 **"What depends on verify_token?"**
 ```bash
-ix depends verify_token --format json
+ix impact verify_token --format json          # one-shot answer
 # or manually:
 ix callers verify_token --format json
 ix imported-by verify_token --format json
 ```
 
-**"List all files and their imports"**
+**"What are the most important classes?"**
 ```bash
-ix search "" --kind file --limit 50 --format json
-ix imports <filename> --format json   # for each file
+ix rank --by dependents --kind class --top 10 --format json
+```
+
+**"List all functions"**
+```bash
+ix inventory --kind function --format json
 ```
 
 ### Best Practices
@@ -95,7 +114,6 @@ ix imports <filename> --format json   # for each file
 ## Do NOT Use
 - `ix query` — deprecated, produces oversized low-signal responses
 - MCP tools (`ix_query`, `ix_search`, etc.) — deprecated, use CLI instead
-- Broad repo-wide inventory queries
 - NLP-style QA in a single command
 
 ## Confidence Scores
