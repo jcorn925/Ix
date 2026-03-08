@@ -8,6 +8,8 @@ import cats.syntax.traverse._
 import io.circe.Json
 import io.circe.syntax._
 
+import scala.concurrent.duration._
+
 import ix.memory.model._
 
 /**
@@ -15,6 +17,13 @@ import ix.memory.model._
  * instead of individual AQL queries.
  */
 class BulkWriteApi(client: ArangoClient) {
+
+  private def withRetry[A](action: IO[A], maxAttempts: Int = 3, delay: FiniteDuration = 500.millis): IO[A] = {
+    action.handleErrorWith { err =>
+      if (maxAttempts <= 1) IO.raiseError(err)
+      else IO.sleep(delay) *> withRetry(action, maxAttempts - 1, delay * 2)
+    }
+  }
 
   def commitBatch(
     fileBatches: Vector[FileBatch],
@@ -35,10 +44,10 @@ class BulkWriteApi(client: ArangoClient) {
     for {
       _ <- tombstoneExistingNodes(logicalIds, newRev)
       _ <- retireOldClaims(fileBatches, newRev)
-      _ <- client.bulkInsert("nodes", allNodes)
-      _ <- client.bulkInsertEdges("edges", allEdges)
-      _ <- client.bulkInsert("claims", allClaims)
-      _ <- client.bulkInsert("patches", allPatches)
+      _ <- withRetry(client.bulkInsert("nodes", allNodes))
+      _ <- withRetry(client.bulkInsertEdges("edges", allEdges))
+      _ <- withRetry(client.bulkInsert("claims", allClaims))
+      _ <- withRetry(client.bulkInsert("patches", allPatches))
       _ <- updateRevision(newRev)
     } yield CommitResult(Rev(newRev), CommitStatus.Ok)
   }
