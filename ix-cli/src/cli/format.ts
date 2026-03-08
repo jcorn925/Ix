@@ -357,6 +357,9 @@ export interface ExplainResult {
   calls: number;
   contains: number;
   historyLength: number;
+  signature?: string;
+  docstring?: string;
+  callList?: string[];
 }
 
 export function formatExplain(result: ExplainResult, format: string): void {
@@ -365,7 +368,14 @@ export function formatExplain(result: ExplainResult, format: string): void {
     return;
   }
   const shortId = result.id.slice(0, 8);
-  console.log(`  ${chalk.cyan(result.kind)} ${chalk.bold(result.name)} ${chalk.dim(shortId)}`);
+  if (result.signature) {
+    console.log(`  ${chalk.green(result.signature)}`);
+  } else {
+    console.log(`  ${chalk.cyan(result.kind)} ${chalk.bold(result.name)} ${chalk.dim(shortId)}`);
+  }
+  if (result.docstring) {
+    console.log(`  ${chalk.dim('"' + result.docstring + '"')}`);
+  }
   if (result.container) {
     console.log(`  ${chalk.dim("in")} ${chalk.cyan(result.container.kind)} ${result.container.name}`);
   }
@@ -374,7 +384,14 @@ export function formatExplain(result: ExplainResult, format: string): void {
   }
   console.log(`  ${chalk.dim("introduced rev")} ${result.introducedRev}`);
   if (result.calledBy > 0) console.log(`  ${chalk.dim("called by")} ${result.calledBy} methods`);
-  if (result.calls > 0) console.log(`  ${chalk.dim("calls")} ${result.calls} methods`);
+  if (result.callList && result.callList.length > 0) {
+    console.log(`  ${chalk.dim("calls:")}`);
+    for (const c of result.callList) {
+      console.log(`    ${c}`);
+    }
+  } else if (result.calls > 0) {
+    console.log(`  ${chalk.dim("calls")} ${result.calls} methods`);
+  }
   if (result.contains > 0) console.log(`  ${chalk.dim("contains")} ${result.contains} members`);
   if (result.historyLength > 0) console.log(`  ${chalk.dim("history")} ${result.historyLength} patches`);
 }

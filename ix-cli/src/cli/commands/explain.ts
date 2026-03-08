@@ -40,6 +40,26 @@ export function registerExplainCommand(program: Command): void {
       );
 
       const node = details.node as any;
+
+      // Extract snippet fields from attrs
+      const signature = node.attrs?.signature || node.attrs?.summary;
+      const docstring = node.attrs?.docstring || node.attrs?.description;
+
+      // Get actual callee names from outgoing CALLS edges
+      const calleeEdges = callEdges.filter((e: any) => e.src === target.id);
+      let callList: string[] | undefined;
+      if (calleeEdges.length > 0 && calleeEdges.length <= 20) {
+        const calleeNames = await Promise.all(
+          calleeEdges.map(async (e: any) => {
+            try {
+              const callee = await client.entity(e.dst);
+              return (callee.node as any).name || e.dst;
+            } catch { return e.dst; }
+          })
+        );
+        callList = calleeNames;
+      }
+
       const result: ExplainResult = {
         kind: node.kind,
         name: node.name || node.attrs?.name || target.name,
@@ -51,6 +71,9 @@ export function registerExplainCommand(program: Command): void {
         calls: callEdges.filter((e: any) => e.src === target.id).length,
         contains: containedEdges.length,
         historyLength: (history as any)?.chain?.length ?? 0,
+        signature,
+        docstring,
+        callList,
       };
 
       formatExplain(result, opts.format);
