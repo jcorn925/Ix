@@ -41,10 +41,12 @@ class BulkIngestionService(
   def ingestPath(
     path: Path,
     language: Option[String],
-    recursive: Boolean
+    recursive: Boolean,
+    onProgress: IngestionProgress => IO[Unit] = _ => IO.unit
   ): IO[IngestionResult] = {
     for {
       files      <- discoverFiles(path, language, recursive)
+      _          <- onProgress(IngestionProgress(files.size, 0, 0, 0))
       hashMap    <- loadExistingHashes(files)
       outcomes   <- files.parTraverseN(parallelism) { f =>
         parseFile(f, hashMap).handleErrorWith { err =>
@@ -58,9 +60,11 @@ class BulkIngestionService(
       errorCount     = outcomes.count { case Skipped("parseError") => true; case _ => false }
       tooLargeCount  = outcomes.count { case Skipped("tooLarge") => true; case _ => false }
       skippedCount   = unchangedCount + emptyCount + errorCount + tooLargeCount
+      totalChunks    = if (validBatches.isEmpty) 0 else (validBatches.size + 99) / 100
+      _          <- onProgress(IngestionProgress(files.size, outcomes.size, 0, totalChunks))
       latestRev  <- queryApi.getLatestRev
       result     <- if (validBatches.isEmpty) IO.pure(CommitResult(latestRev, CommitStatus.Ok))
-                    else bulkWriteApi.commitBatchChunked(validBatches.toVector, latestRev.value)
+                    else commitChunkedWithProgress(validBatches.toVector, latestRev.value, onProgress, files.size, outcomes.size)
     } yield IngestionResult(
       filesProcessed  = files.size,
       patchesApplied  = validBatches.size,
@@ -69,6 +73,27 @@ class BulkIngestionService(
       latestRev       = result.newRev,
       skipReasons     = SkipReasons(unchanged = unchangedCount, emptyFile = emptyCount, parseError = errorCount, tooLarge = tooLargeCount)
     )
+  }
+
+  private def commitChunkedWithProgress(
+    batches: Vector[FileBatch],
+    baseRev: Long,
+    onProgress: IngestionProgress => IO[Unit],
+    discovered: Int,
+    parsed: Int
+  ): IO[CommitResult] = {
+    val chunkSize = 100
+    val chunks = batches.grouped(chunkSize).toVector
+    val totalChunks = chunks.size
+
+    chunks.zipWithIndex.foldLeft(IO.pure(baseRev)) { case (revIO, (chunk, idx)) =>
+      revIO.flatMap { currentRev =>
+        bulkWriteApi.commitBatch(chunk, currentRev).flatMap { result =>
+          onProgress(IngestionProgress(discovered, parsed, idx + 1, totalChunks)) *>
+            IO.pure(result.newRev.value)
+        }
+      }
+    }.map(finalRev => CommitResult(Rev(finalRev), CommitStatus.Ok))
   }
 
   /**

@@ -9,7 +9,8 @@ import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
 
-import ix.memory.ingestion.{BulkIngestionService, IngestionService}
+import ix.memory.ingestion.{BulkIngestionService, IngestionProgress, IngestionService}
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 case class IngestRequest(path: String, language: Option[String], recursive: Option[Boolean])
 
@@ -35,6 +36,12 @@ object IngestResponse {
 
 class IngestionRoutes(ingestionService: IngestionService, bulkIngestionService: BulkIngestionService) {
 
+  private val logger = Slf4jLogger.getLoggerFromName[IO]("ix.ingest.progress")
+
+  private val progressLog: IngestionProgress => IO[Unit] = { p =>
+    logger.info(s"discovered=${p.filesDiscovered} parsed=${p.filesParsed} chunks=${p.chunksWritten}/${p.totalChunks}")
+  }
+
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "v1" / "ingest" =>
       (for {
@@ -43,7 +50,7 @@ class IngestionRoutes(ingestionService: IngestionService, bulkIngestionService: 
           new IllegalArgumentException("Path traversal not allowed")
         )
         path      = Paths.get(body.path)
-        result   <- bulkIngestionService.ingestPath(path, body.language, body.recursive.getOrElse(false))
+        result   <- bulkIngestionService.ingestPath(path, body.language, body.recursive.getOrElse(false), progressLog)
         resp     <- Ok(IngestResponse(
           filesProcessed  = result.filesProcessed,
           patchesApplied  = result.patchesApplied,

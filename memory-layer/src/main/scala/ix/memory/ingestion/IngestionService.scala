@@ -185,6 +185,13 @@ class IngestionService(parserRouter: ParserRouter, writeApi: GraphWriteApi, quer
   }
 }
 
+case class IngestionProgress(
+  filesDiscovered: Int,
+  filesParsed:     Int,
+  chunksWritten:   Int,
+  totalChunks:     Int
+)
+
 case class SkipReasons(
   unchanged:    Int = 0,
   emptyFile:    Int = 0,
