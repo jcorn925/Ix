@@ -18,7 +18,7 @@ import ix.memory.TestDbHelper
 import ix.memory.conflict.ConflictService
 import ix.memory.context._
 import ix.memory.db._
-import ix.memory.ingestion.{IngestionService, ParserRouter}
+import ix.memory.ingestion.{BulkIngestionService, IngestionService, ParserRouter}
 import ix.memory.model._
 
 class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestDbHelper {
@@ -64,7 +64,9 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestD
       new ConflictDetectorImpl()
     )
     val ingestionService = new IngestionService(new ParserRouter(), writeApi, queryApi)
-    Routes.all(contextService, ingestionService, queryApi, writeApi, conflictService, client).orNotFound
+    val bulkWriteApi = new BulkWriteApi(client)
+    val bulkIngestionService = new BulkIngestionService(new ParserRouter(), bulkWriteApi, queryApi)
+    Routes.all(contextService, ingestionService, bulkIngestionService, queryApi, writeApi, conflictService, client).orNotFound
   }
 
   // ── Test 1: Health check ─────────────────────────────────────────────
