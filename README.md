@@ -38,17 +38,23 @@ The backend is ready when you see:
 Ix Memory backend is ready at http://localhost:8090
 ```
 
-### 2. Install CLI dependencies
+### 2. Install the CLI
 
+**Via Homebrew (recommended):**
 ```bash
-cd ix-cli && npm install
+brew tap ix-infrastructure/ix https://github.com/ix-infrastructure/IX-Memory
+brew install ix
+```
+
+**Or manually:**
+```bash
+cd ix-cli && npm install && npm run build
 ```
 
 ### 3. Initialize Ix in your project
 
 ```bash
-cd /path/to/your/project
-npx tsx /path/to/ix-cli/src/cli/main.ts init
+ix init
 ```
 
 This checks the backend is running, creates `~/.ix/config.yaml`, and adds Ix rules to your `CLAUDE.md`.
