@@ -13,7 +13,6 @@ import { registerHistoryCommand } from "./commands/history.js";
 import { registerConflictsCommand } from "./commands/conflicts.js";
 import { registerDiffCommand } from "./commands/diff.js";
 import { registerInitCommand } from "./commands/init.js";
-import { registerMcpInstallCommand } from "./commands/mcp-install.js";
 import { registerTextCommand } from "./commands/text.js";
 import { registerLocateCommand } from "./commands/locate.js";
 import { registerExplainCommand } from "./commands/explain.js";
@@ -48,7 +47,6 @@ registerHistoryCommand(program);
 registerConflictsCommand(program);
 registerDiffCommand(program);
 registerInitCommand(program);
-registerMcpInstallCommand(program);
 registerTextCommand(program);
 registerLocateCommand(program);
 registerExplainCommand(program);
@@ -63,12 +61,5 @@ registerInventoryCommand(program);
 registerImpactCommand(program);
 registerRankCommand(program);
 registerOverviewCommand(program);
-
-program
-  .command("mcp-start")
-  .description("Start the MCP server (stdio transport)")
-  .action(async () => {
-    await import("../mcp/server.js");
-  });
 
 program.parse();

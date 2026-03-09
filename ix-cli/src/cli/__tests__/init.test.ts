@@ -30,9 +30,9 @@ describe("CLAUDE_MD template", () => {
     expect(CLAUDE_MD).toContain("ix callers");
   });
 
-  it("routes through CLI exclusively, not MCP", () => {
+  it("routes through CLI exclusively", () => {
     expect(CLAUDE_MD).toContain("ix` CLI exclusively");
-    expect(CLAUDE_MD).toContain("Do NOT use MCP");
+    expect(CLAUDE_MD).not.toContain("MCP");
   });
 
   it("contains a Do NOT Use section", () => {

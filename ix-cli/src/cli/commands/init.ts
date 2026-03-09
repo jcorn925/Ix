@@ -17,8 +17,7 @@ This project uses Ix Memory — persistent, time-aware context for LLM assistant
 
 ## Interface
 
-Use the \`ix\` CLI exclusively. Do NOT use MCP tools — the CLI is the canonical agent interface.
-All commands support \`--format json\` for machine-readable output.
+Use the \`ix\` CLI exclusively. All commands support \`--format json\` for machine-readable output.
 
 ## MANDATORY RULES
 1. BEFORE answering codebase questions → use targeted \`ix\` CLI commands (see routing below). Do NOT answer from training data alone.
@@ -63,7 +62,6 @@ Use bounded, composable CLI commands — never broad queries.
 
 ## Do NOT Use
 - \`ix query\` — deprecated, oversized low-signal responses
-- MCP tools — deprecated, use CLI instead
 - Broad repo-wide inventory queries
 
 ## Confidence Scores
