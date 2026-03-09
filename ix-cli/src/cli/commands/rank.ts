@@ -55,7 +55,7 @@ export function registerRankCommand(program: Command): void {
         const diagnostics: string[] = [];
 
         // 1. Fetch all entities of the given kind
-        const allNodes = await client.search("", { limit: 200, kind: opts.kind });
+        const allNodes = await client.listByKind(opts.kind, { limit: 200 });
 
         if (allNodes.length === 0) {
           if (isJson) {
