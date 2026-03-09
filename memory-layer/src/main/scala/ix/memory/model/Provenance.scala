@@ -16,6 +16,8 @@ object SourceType {
   case object Comment  extends SourceType
   case object Inferred extends SourceType
   case object Human    extends SourceType
+  case object Cli      extends SourceType
+  case object Decision extends SourceType
 
   /** Base authority weight for confidence scoring. */
   def baseAuthority(st: SourceType): Double = st match {
@@ -28,6 +30,8 @@ object SourceType {
     case Comment  => 0.50
     case Inferred => 0.40
     case Human    => 0.80
+    case Cli      => 0.75
+    case Decision => 0.80
   }
 
   private val nameMap: Map[String, SourceType] = Map(
@@ -39,7 +43,9 @@ object SourceType {
     "commit"   -> Commit,
     "comment"  -> Comment,
     "inferred" -> Inferred,
-    "human"    -> Human
+    "human"    -> Human,
+    "cli"      -> Cli,
+    "decision" -> Decision
   )
 
   implicit val encoder: Encoder[SourceType] = Encoder[String].contramap {
@@ -52,6 +58,8 @@ object SourceType {
     case Comment  => "comment"
     case Inferred => "inferred"
     case Human    => "human"
+    case Cli      => "cli"
+    case Decision => "decision"
   }
 
   implicit val decoder: Decoder[SourceType] = Decoder[String].emap { s =>

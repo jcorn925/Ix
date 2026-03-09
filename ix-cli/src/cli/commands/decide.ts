@@ -74,7 +74,7 @@ export function buildDecisionPatch(
     source: {
       uri: `ix://decision/${encodeURIComponent(title)}`,
       extractor: "ix-cli:decide",
-      sourceType: "Decision",
+      sourceType: "decision",
     },
     baseRev: 0,
     ops,

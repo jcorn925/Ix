@@ -6,6 +6,8 @@ import { IxClient } from "../../client/api.js";
 import { getEndpoint, resolveWorkspaceRoot } from "../config.js";
 import { formatLocateResults, type LocateResult } from "../format.js";
 import type { ResultSource } from "../format.js";
+import { isFileStale } from "../stale.js";
+import { stderr } from "../stderr.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,23 +16,31 @@ export function registerLocateCommand(program: Command): void {
     .command("locate <symbol>")
     .description("Find a symbol in code and resolve to graph entities")
     .option("--limit <n>", "Max text hits to check", "10")
+    .option("--path <path>", "Prefer results from files matching this path substring")
     .option("--format <fmt>", "Output format (text|json)", "text")
     .option("--root <dir>", "Workspace root directory")
-    .action(async (symbol: string, opts: { limit: string; format: string; root?: string }) => {
+    .action(async (symbol: string, opts: { limit: string; path?: string; format: string; root?: string }) => {
       const client = new IxClient(getEndpoint());
       const limit = parseInt(opts.limit, 10);
+      const pathFilter = opts.path;
 
       // Step 1: Search the graph for matching entities
-      const graphNodes = await client.search(symbol, { limit: 5 });
+      const graphNodes = await client.search(symbol, { limit: 10 });
 
       // Step 2: Run ripgrep for text hits
       let textHits: Array<{ path: string; line: number }> = [];
       try {
-        const { stdout } = await execFileAsync("rg", [
+        const rgArgs = [
           "--json", "--max-count", String(limit),
           "--no-heading", "--word-regexp",
-          symbol, resolveWorkspaceRoot(opts.root),
-        ], { maxBuffer: 10 * 1024 * 1024 });
+        ];
+        // If path filter provided, restrict ripgrep to that subtree
+        const searchRoot = pathFilter
+          ? resolveWorkspaceRoot(opts.root) + "/" + pathFilter
+          : resolveWorkspaceRoot(opts.root);
+        rgArgs.push(symbol, searchRoot);
+
+        const { stdout } = await execFileAsync("rg", rgArgs, { maxBuffer: 10 * 1024 * 1024 });
 
         for (const line of stdout.split("\n")) {
           if (!line.trim()) continue;
@@ -52,7 +62,7 @@ export function registerLocateCommand(program: Command): void {
       textHits = textHits.slice(0, 10);
 
       // Step 3: Build results — graph entities first, then unmatched text hits
-      const results: LocateResult[] = [];
+      let results: LocateResult[] = [];
       for (const node of graphNodes) {
         const n = node as any;
         results.push({
@@ -62,6 +72,13 @@ export function registerLocateCommand(program: Command): void {
           file: n.provenance?.source_uri ?? n.provenance?.sourceUri,
           source: "graph",
         });
+      }
+
+      // Apply path filter to graph results — put matching results first
+      if (pathFilter) {
+        const matching = results.filter(r => r.file?.includes(pathFilter));
+        const nonMatching = results.filter(r => !r.file?.includes(pathFilter));
+        results = [...matching, ...nonMatching];
       }
 
       // Add text-only hits that didn't match any graph entity
@@ -90,9 +107,22 @@ export function registerLocateCommand(program: Command): void {
             ? "graph"
             : "text";
 
+      // Check staleness for the top result
+      let stale = false;
+      const topFile = results[0]?.file;
+      if (topFile) {
+        try { stale = await isFileStale(client, topFile); } catch {}
+      }
+
       if (opts.format === "json") {
-        console.log(JSON.stringify({ results, resultSource }, null, 2));
+        const output: any = { results, resultSource };
+        if (stale) {
+          output.stale = true;
+          output.warning = "Results may be stale; files have changed since last ingest.";
+        }
+        console.log(JSON.stringify(output, null, 2));
       } else {
+        if (stale) stderr(chalk.yellow("⚠ Some results may be stale. Run ix ingest to update.\n"));
         if (results.length === 0) {
           console.log("No matches found.");
         } else {

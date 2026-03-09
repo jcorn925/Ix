@@ -3,15 +3,19 @@ import { IxClient } from "../../client/api.js";
 import { getEndpoint } from "../config.js";
 import { formatExplain, type ExplainResult, type EntityRef, type Diagnostic } from "../format.js";
 import { resolveEntity, isRawId } from "../resolve.js";
+import { isFileStale } from "../stale.js";
+import { stderr } from "../stderr.js";
+import chalk from "chalk";
 
 export function registerExplainCommand(program: Command): void {
   program
     .command("explain <symbol>")
     .description("Explain an entity — shows structure, container, and history")
     .option("--kind <kind>", "Filter target entity by kind")
+    .option("--path <path>", "Prefer symbols from files matching this path substring")
     .option("--format <fmt>", "Output format (text|json)", "text")
-    .addHelpText("after", "\nExamples:\n  ix explain IngestionService\n  ix explain verify_token --kind function --format json")
-    .action(async (symbol: string, opts: { kind?: string; format: string }) => {
+    .addHelpText("after", "\nExamples:\n  ix explain IngestionService\n  ix explain expand --path memory-layer\n  ix explain verify_token --kind function --format json")
+    .action(async (symbol: string, opts: { kind?: string; path?: string; format: string }) => {
       const client = new IxClient(getEndpoint());
       const target = await resolveEntity(client, symbol, ["class", "function", "method", "trait", "object", "interface", "module", "file"], opts);
       if (!target) return;
@@ -41,6 +45,13 @@ export function registerExplainCommand(program: Command): void {
       );
 
       const node = details.node as any;
+
+      // Check staleness
+      let stale = false;
+      const sourceUri = node.provenance?.source_uri ?? node.provenance?.sourceUri;
+      if (sourceUri) {
+        try { stale = await isFileStale(client, sourceUri); } catch {}
+      }
 
       // Extract snippet fields from attrs
       const signature = node.attrs?.signature || node.attrs?.summary;
@@ -93,11 +104,18 @@ export function registerExplainCommand(program: Command): void {
         }
       }
 
-      const result: ExplainResult = {
+      if (stale) {
+        diagnostics.push({
+          code: "stale_source",
+          message: "Results may be stale; file has changed since last ingest.",
+        });
+      }
+
+      const result: ExplainResult & { stale?: boolean; warning?: string } = {
         kind: node.kind,
         name: node.name || node.attrs?.name || target.name,
         id: target.id,
-        file: node.provenance?.source_uri ?? node.provenance?.sourceUri,
+        file: sourceUri,
         container: container ? { kind: container.kind, name: container.name || container.attrs?.name || "(unknown)" } : undefined,
         introducedRev: node.createdRev ?? node.created_rev,
         calledBy: callEdges.filter((e: any) => e.dst === target.id).length,
@@ -110,6 +128,27 @@ export function registerExplainCommand(program: Command): void {
         diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
       };
 
-      formatExplain(result, opts.format);
+      if (stale) {
+        (result as any).stale = true;
+        (result as any).warning = "Results may be stale; file has changed since last ingest.";
+      }
+
+      if (opts.format === "json") {
+        // Include resolvedTarget and stale fields in JSON
+        const output: any = {
+          resolvedTarget: { id: target.id, kind: target.kind, name: target.name },
+          resolutionMode: target.resolutionMode,
+          resultSource: "graph",
+          result,
+        };
+        if (stale) {
+          output.stale = true;
+          output.warning = "Results may be stale; file has changed since last ingest.";
+        }
+        console.log(JSON.stringify(output, null, 2));
+      } else {
+        if (stale) stderr(chalk.yellow("⚠ Source has changed since last ingest. Run ix ingest to update.\n"));
+        formatExplain(result, "text");
+      }
     });
 }

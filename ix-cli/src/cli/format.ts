@@ -416,7 +416,9 @@ export type DiagnosticCode =
   | "dangling_reference_filtered"
   | "ambiguous_resolution"
   | "no_edges"
-  | "text_fallback_used";
+  | "text_fallback_used"
+  | "stale_source"
+  | "unfiltered_search";
 
 export interface Diagnostic {
   code: DiagnosticCode;

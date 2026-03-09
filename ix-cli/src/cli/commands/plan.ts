@@ -200,7 +200,7 @@ export function registerPlanCommand(program: Command): void {
 
       // Expand PLAN_HAS_TASK to get all tasks
       const { nodes: taskNodes, edges: taskEdges } = await client.expand(planId, {
-        direction: "outgoing",
+        direction: "out",
         predicates: ["PLAN_HAS_TASK"],
       });
 
@@ -214,7 +214,7 @@ export function registerPlanCommand(program: Command): void {
 
         // Expand DEPENDS_ON for this task
         const { edges: depEdges } = await client.expand(node.id, {
-          direction: "outgoing",
+          direction: "out",
           predicates: ["DEPENDS_ON"],
         });
         const dependsOn = depEdges.map((e: any) => e.dst as string);
@@ -287,7 +287,7 @@ export function registerPlanCommand(program: Command): void {
       const client = new IxClient(getEndpoint());
 
       const { nodes: taskNodes } = await client.expand(planId, {
-        direction: "outgoing",
+        direction: "out",
         predicates: ["PLAN_HAS_TASK"],
       });
 
@@ -299,7 +299,7 @@ export function registerPlanCommand(program: Command): void {
         const status = getTaskStatus(entityDetail);
 
         const { edges: depEdges } = await client.expand(node.id, {
-          direction: "outgoing",
+          direction: "out",
           predicates: ["DEPENDS_ON"],
         });
         const dependsOn = depEdges.map((e: any) => e.dst as string);
