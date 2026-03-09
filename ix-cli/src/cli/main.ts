@@ -28,6 +28,7 @@ import { registerImpactCommand } from "./commands/impact.js";
 import { registerRankCommand } from "./commands/rank.js";
 import { registerOverviewCommand } from "./commands/overview.js";
 import { registerGoalCommand } from "./commands/goal.js";
+import { registerPlanCommand, registerTaskCommand } from "./commands/plan.js";
 
 const program = new Command();
 program
@@ -63,5 +64,7 @@ registerImpactCommand(program);
 registerRankCommand(program);
 registerOverviewCommand(program);
 registerGoalCommand(program);
+registerPlanCommand(program);
+registerTaskCommand(program);
 
 program.parse();
