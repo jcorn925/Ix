@@ -16,7 +16,6 @@ export class IxClient {
     question: string,
     opts?: { asOfRev?: number; depth?: string }
   ): Promise<StructuredContext> {
-    console.log("CLI depth:", opts?.depth);
     return this.post("/v1/context", { query: question, ...opts });
   }
 
@@ -52,6 +51,16 @@ export class IxClient {
       kind: opts?.kind,
       language: opts?.language,
       asOfRev: opts?.asOfRev,
+    });
+  }
+
+  async listByKind(
+    kind: string,
+    opts?: { limit?: number }
+  ): Promise<GraphNode[]> {
+    return this.post("/v1/list", {
+      kind,
+      limit: opts?.limit,
     });
   }
 
