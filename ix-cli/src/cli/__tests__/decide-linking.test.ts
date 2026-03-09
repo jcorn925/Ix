@@ -41,6 +41,21 @@ describe("buildDecisionPatch", () => {
     expect(patch.ops[1].dst).toBe(patch.ops[0].id);
   });
 
+  it("creates DECISION_RESPONDS_TO_BUG edge when respondsTo is provided", () => {
+    const patch = buildDecisionPatch("Fix auth flow", "JWT is better", {
+      respondsTo: "bug-id-999",
+    });
+    expect(patch.ops.length).toBe(2); // 1 UpsertNode + 1 UpsertEdge
+    expect(patch.ops[1].predicate).toBe("DECISION_RESPONDS_TO_BUG");
+    expect(patch.ops[1].src).toBe(patch.ops[0].id); // decision → bug
+    expect(patch.ops[1].dst).toBe("bug-id-999");
+  });
+
+  it("omits DECISION_RESPONDS_TO_BUG edge when respondsTo is not provided", () => {
+    const patch = buildDecisionPatch("Simple decision", "Reason");
+    expect(patch.ops.length).toBe(1); // just the node
+  });
+
   it("uses sourceType decision", () => {
     const patch = buildDecisionPatch("Test", "Reason");
     expect(patch.source.sourceType).toBe("decision");

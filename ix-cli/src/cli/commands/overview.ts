@@ -37,12 +37,15 @@ interface OverviewResult {
 export function registerOverviewCommand(program: Command): void {
   program
     .command("overview <target>")
-    .description("Compact one-shot structural summary of an entity")
+    .description("Structural summary: members, relationships, decisions, and bugs for an entity")
     .option("--kind <kind>", "Filter target entity by kind")
     .option("--format <fmt>", "Output format (text|json)", "text")
     .addHelpText(
       "after",
-      `\nExamples:
+      `\nUse overview for structural summaries. Use 'ix read' for raw source code.
+Use 'ix locate' to resolve a symbol and trace its relationships.
+
+Examples:
   ix overview IngestionService
   ix overview IngestionService --kind class
   ix overview verify_token --kind function --format json

@@ -9,6 +9,7 @@ interface DecisionLinkOpts {
   affects?: { id: string; kind: string; name: string }[];
   supersedes?: string;
   parent?: string;
+  respondsTo?: string;
 }
 
 export function buildDecisionPatch(
@@ -67,6 +68,18 @@ export function buildDecisionPatch(
     });
   }
 
+  // 5. DECISION_RESPONDS_TO_BUG edge
+  if (linkOpts.respondsTo) {
+    ops.push({
+      type: "UpsertEdge",
+      id: deterministicId(`${decisionId}:DECISION_RESPONDS_TO_BUG:${linkOpts.respondsTo}`),
+      src: decisionId,
+      dst: linkOpts.respondsTo,
+      predicate: "DECISION_RESPONDS_TO_BUG",
+      attrs: {},
+    });
+  }
+
   return {
     patchId: decisionId,
     actor: "ix-cli",
@@ -91,6 +104,7 @@ export function registerDecideCommand(program: Command): void {
     .option("--affects <entities>", "Comma-separated entity names to link (creates DECISION_AFFECTS edges)")
     .option("--supersedes <id>", "Decision ID this supersedes")
     .option("--parent <id>", "Parent decision ID")
+    .option("--responds-to <bugId>", "Bug ID this decision responds to (creates DECISION_RESPONDS_TO_BUG edge)")
     .option("--format <fmt>", "Output format (text|json)", "text")
     .action(
       async (
@@ -101,11 +115,12 @@ export function registerDecideCommand(program: Command): void {
           affects?: string;
           supersedes?: string;
           parent?: string;
+          respondsTo?: string;
           format: string;
         }
       ) => {
         const client = new IxClient(getEndpoint());
-        const hasLinks = opts.affects || opts.supersedes || opts.parent;
+        const hasLinks = opts.affects || opts.supersedes || opts.parent || opts.respondsTo;
 
         if (hasLinks) {
           // Use GraphPatch path for linked decisions
@@ -128,6 +143,7 @@ export function registerDecideCommand(program: Command): void {
             affects: resolvedAffects,
             supersedes: opts.supersedes,
             parent: opts.parent,
+            respondsTo: opts.respondsTo,
           });
 
           if (opts.intentId) {

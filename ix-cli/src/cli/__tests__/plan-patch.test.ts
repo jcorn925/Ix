@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPlanPatch, buildTaskPatch, buildTaskUpdatePatch } from "../commands/plan.js";
+import { buildPlanPatch, buildTaskPatch, buildTaskUpdatePatch, isValidWorkflow } from "../commands/plan.js";
 
 describe("buildPlanPatch", () => {
   it("creates a Plan node and GOAL_HAS_PLAN edge", () => {
@@ -80,9 +80,56 @@ describe("buildTaskPatch", () => {
     expect(attrs).not.toHaveProperty("workflow");
   });
 
+  it("stores staged workflow object in attrs when provided", () => {
+    const staged = { discover: ["ix overview Auth"], implement: ["ix read Auth"], validate: ["ix callers Auth"] };
+    const patch = buildTaskPatch("Staged task", {
+      planId: "plan-123",
+      workflow: staged,
+    });
+    const attrs = patch.ops[0].attrs as Record<string, unknown>;
+    expect(attrs.workflow).toEqual(staged);
+  });
+
+  it("adds TASK_RESOLVES_BUG edge when resolves is provided", () => {
+    const patch = buildTaskPatch("Fix crash", {
+      planId: "plan-123",
+      resolves: "bug-id-789",
+    });
+    const resolveEdge = patch.ops.find((op: any) => op.predicate === "TASK_RESOLVES_BUG");
+    expect(resolveEdge).toBeDefined();
+    expect(resolveEdge!.src).toBe(patch.ops[0].id);
+    expect(resolveEdge!.dst).toBe("bug-id-789");
+  });
+
+  it("omits TASK_RESOLVES_BUG edge when resolves is not provided", () => {
+    const patch = buildTaskPatch("Normal task", { planId: "plan-123" });
+    const resolveEdge = patch.ops.find((op: any) => op.predicate === "TASK_RESOLVES_BUG");
+    expect(resolveEdge).toBeUndefined();
+  });
+
   it("uses sourceType cli", () => {
     const patch = buildTaskPatch("Task", { planId: "plan-123" });
     expect(patch.source.sourceType).toBe("cli");
+  });
+});
+
+describe("isValidWorkflow", () => {
+  it("accepts flat string array", () => {
+    expect(isValidWorkflow(["ix overview Auth"])).toBe(true);
+  });
+
+  it("accepts staged object with valid keys", () => {
+    expect(isValidWorkflow({ discover: ["cmd1"], implement: ["cmd2"] })).toBe(true);
+  });
+
+  it("rejects staged object with unknown keys", () => {
+    expect(isValidWorkflow({ discover: ["cmd1"], invalid: ["cmd2"] })).toBe(false);
+  });
+
+  it("rejects non-object/array values", () => {
+    expect(isValidWorkflow("string")).toBe(false);
+    expect(isValidWorkflow(42)).toBe(false);
+    expect(isValidWorkflow(null)).toBe(false);
   });
 });
 

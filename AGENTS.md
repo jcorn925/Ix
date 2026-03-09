@@ -52,6 +52,15 @@ Each result entity in `results` includes:
 
 ## Command routing
 
+### Recommended loop
+
+1. `ix briefing --format json`           — resume session context
+2. `ix overview <target> --format json`  — understand a component
+3. `ix impact <target> --format json`    — check blast radius
+4. `ix rank / ix inventory`              — find hotspots or list entities
+5. `ix plan next <id> --with-workflow`   — get next task
+6. `ix tasks --status pending`           — see all pending tasks across plans
+
 ### Start here — high-level workflow commands
 
 These are the preferred entry points. Use them first; drop to low-level commands only when you need fine-grained control.
@@ -132,13 +141,19 @@ ix goal create "GitHub ingestion pipeline" --format json
 ix goal list --format json
 ix plan create "GitHub Ingestion" --goal <goal-id> --format json
 ix plan task "API fetch layer" --plan <plan-id> --depends-on <task-id> --format json
-ix plan task "title" --plan <id> --workflow "cmd1,cmd2" --format json  # Task with workflow
-ix plan status <plan-id> --format json
-ix plan next <plan-id> --format json
-ix plan next <plan-id> --with-workflow --format json  # Next task with workflow commands
+ix plan task "title" --plan <id> --workflow "cmd1,cmd2" --format json  # Task with flat workflow
+ix plan task "title" --plan <id> --workflow-staged '{"discover":["cmd1"],"implement":["cmd2"],"validate":["cmd3"]}' --format json  # Staged workflow
+ix plan task "title" --plan <id> --resolves <bugId> --format json  # Task resolving a bug
+ix plan status <plan-id> --format json          # Includes openBugCount in summary
+ix plan next <plan-id> --format json            # Explains reason if no actionable task
+ix plan next <plan-id> --with-workflow --format json  # Next task with staged workflow display
+ix tasks --format json                                 # List all tasks across plans
+ix tasks --status pending --format json                # Filter tasks by status
+ix tasks --plan <plan-id> --format json                # Tasks in a specific plan
 ix task show <task-id> --with-workflow --format json   # Task details with workflow
 ix task update <task-id> --status done --format json
 ix decide "Use client-side patch" --rationale "..." --affects IngestionService --format json
+ix decide "Use JWT" --rationale "..." --responds-to <bugId> --format json  # Decision responding to a bug
 ```
 
 ## Semantic boundaries

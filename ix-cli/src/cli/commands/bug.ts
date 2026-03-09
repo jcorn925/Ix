@@ -92,7 +92,19 @@ const STATUS_ICONS: Record<string, string> = {
 export function registerBugCommand(program: Command): void {
   const bug = program
     .command("bug")
-    .description("Manage bugs");
+    .description("Manage bugs")
+    .addHelpText(
+      "after",
+      `\nSubcommands:
+  create <title>   Create a new bug
+  show <bugId>     Show bug details
+  update <bugId>   Update a bug's status
+
+Examples:
+  ix bug create "Auth crash" --severity high --affects AuthService
+  ix bug show <bug-id> --format json
+  ix bug update <bug-id> --status resolved`
+    );
 
   bug
     .command("create <title>")

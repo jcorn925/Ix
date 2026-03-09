@@ -32,11 +32,20 @@ interface BriefingChange {
   patchId: string;
   intent: string | null;
   rev: number;
+  timestamp: string | null;
+}
+
+interface BriefingFreshness {
+  lastIngestAt: string | null;
+  ageMinutes: number | null;
+  stale: boolean;
 }
 
 export interface BriefingResult {
   lastIngestAt: string | null;
   revision: number | null;
+  freshness: BriefingFreshness;
+  goalCount: number;
   activeGoals: BriefingGoal[];
   activePlans: BriefingPlan[];
   openBugs: BriefingBug[];
@@ -46,7 +55,10 @@ export interface BriefingResult {
   diagnostics: string[];
 }
 
-export async function buildBriefing(client: IxClient): Promise<BriefingResult> {
+export async function buildBriefing(
+  client: IxClient,
+  opts: { activeOnly?: boolean } = {}
+): Promise<BriefingResult> {
   const diagnostics: string[] = [];
 
   // Fetch all data sources in parallel
@@ -91,11 +103,23 @@ export async function buildBriefing(client: IxClient): Promise<BriefingResult> {
     revision = latest.rev ?? null;
   }
 
+  // Compute freshness
+  let ageMinutes: number | null = null;
+  let stale = false;
+  if (lastIngestAt) {
+    const ingestDate = new Date(lastIngestAt);
+    const now = new Date();
+    ageMinutes = Math.round((now.getTime() - ingestDate.getTime()) / 60000);
+    stale = ageMinutes > 60;
+  }
+  const freshness: BriefingFreshness = { lastIngestAt, ageMinutes, stale };
+
   // Map goals
-  const activeGoals: BriefingGoal[] = goals.map((g: any) => ({
+  const allGoals: BriefingGoal[] = goals.map((g: any) => ({
     id: g.id,
     name: g.name ?? g.attrs?.statement ?? "(unnamed)",
   }));
+  const goalCount = allGoals.length;
 
   // Map bugs — filter to open/investigating only
   const openBugs: BriefingBug[] = bugs
@@ -117,16 +141,20 @@ export async function buildBriefing(client: IxClient): Promise<BriefingResult> {
     rationale: d.attrs?.rationale ?? d.rationale ?? "",
   }));
 
-  // Map patches/changes
+  // Map patches/changes with timestamp
   const recentChanges: BriefingChange[] = patches.map((p: any) => ({
     patchId: p.patch_id ?? p.patchId ?? p.id,
     intent: p.intent ?? null,
     rev: p.rev ?? 0,
+    timestamp: p.timestamp ?? null,
   }));
 
   // Enrich plans with task summaries (up to 5 plans)
   const activePlans: BriefingPlan[] = [];
   const plansToProcess = plans.slice(0, 5);
+
+  // Track which plans have pending tasks (for activeOnly goal filtering)
+  const plansWithPendingTasks = new Set<string>();
 
   for (const plan of plansToProcess) {
     try {
@@ -176,6 +204,10 @@ export async function buildBriefing(client: IxClient): Promise<BriefingResult> {
         });
       }
 
+      if (pendingCount > 0) {
+        plansWithPendingTasks.add(plan.id);
+      }
+
       // Find next actionable
       const actionable = taskDetails.find(
         (t) =>
@@ -201,9 +233,38 @@ export async function buildBriefing(client: IxClient): Promise<BriefingResult> {
     }
   }
 
+  // Filter goals if --active-only
+  let activeGoals = allGoals;
+  if (opts.activeOnly) {
+    // For each goal (up to 20), check if it has at least one plan with pending tasks
+    const goalsToCheck = allGoals.slice(0, 20);
+    const activeGoalIds = new Set<string>();
+
+    for (const goal of goalsToCheck) {
+      try {
+        const { nodes: goalPlans } = await client.expand(goal.id, {
+          direction: "out",
+          predicates: ["GOAL_HAS_PLAN"],
+        });
+        for (const gp of goalPlans) {
+          if (plansWithPendingTasks.has(gp.id)) {
+            activeGoalIds.add(goal.id);
+            break;
+          }
+        }
+      } catch {
+        // If we can't expand, include it to be safe
+        activeGoalIds.add(goal.id);
+      }
+    }
+    activeGoals = allGoals.filter((g) => activeGoalIds.has(g.id));
+  }
+
   return {
     lastIngestAt,
     revision,
+    freshness,
+    goalCount,
     activeGoals,
     activePlans,
     openBugs,
@@ -218,10 +279,11 @@ export function registerBriefingCommand(program: Command): void {
   program
     .command("briefing")
     .description("Session-resume briefing — aggregated project status")
+    .option("--active-only", "Only show goals with active plans (plans with pending tasks)")
     .option("--format <fmt>", "Output format (text|json)", "text")
-    .action(async (opts: { format: string }) => {
+    .action(async (opts: { activeOnly?: boolean; format: string }) => {
       const client = new IxClient(getEndpoint());
-      const briefing = await buildBriefing(client);
+      const briefing = await buildBriefing(client, { activeOnly: opts.activeOnly });
 
       if (opts.format === "json") {
         console.log(JSON.stringify(briefing, null, 2));
@@ -235,11 +297,22 @@ export function registerBriefingCommand(program: Command): void {
           console.log(chalk.dim(`  Last ingest: ${briefing.lastIngestAt}`));
         }
 
+        // Freshness warning
+        if (briefing.freshness.stale) {
+          const ageStr = briefing.freshness.ageMinutes! >= 60
+            ? `${Math.round(briefing.freshness.ageMinutes! / 60)}h ago`
+            : `${briefing.freshness.ageMinutes}m ago`;
+          console.log(chalk.yellow(`  \u26A0 Graph is stale (last ingest: ${ageStr})`));
+        }
+
         // Goals
         if (briefing.activeGoals.length > 0) {
-          console.log(`\n${chalk.bold("Goals")} (${briefing.activeGoals.length})`);
+          const countLabel = briefing.goalCount !== briefing.activeGoals.length
+            ? ` (${briefing.activeGoals.length} of ${briefing.goalCount})`
+            : ` (${briefing.activeGoals.length})`;
+          console.log(`\n${chalk.bold("Goals")}${countLabel}`);
           for (const g of briefing.activeGoals) {
-            console.log(`  ${chalk.cyan("◆")} ${g.name}`);
+            console.log(`  ${chalk.cyan("\u25C6")} ${g.name}`);
           }
         }
 
@@ -248,7 +321,7 @@ export function registerBriefingCommand(program: Command): void {
           console.log(`\n${chalk.bold("Plans")} (${briefing.activePlans.length})`);
           for (const p of briefing.activePlans) {
             const { done, total } = p.taskSummary;
-            console.log(`  ${chalk.cyan("▸")} ${p.name} ${chalk.dim(`(${done}/${total} done)`)}`);
+            console.log(`  ${chalk.cyan("\u25B8")} ${p.name} ${chalk.dim(`(${done}/${total} done)`)}`);
             if (p.nextTask) {
               console.log(`    ${chalk.green("Next:")} ${p.nextTask}`);
             }
@@ -262,7 +335,7 @@ export function registerBriefingCommand(program: Command): void {
             const sev = b.severity === "critical" || b.severity === "high"
               ? chalk.red(b.severity)
               : chalk.yellow(b.severity);
-            console.log(`  ${chalk.red("○")} ${b.title} ${chalk.dim(`[${sev}]`)}`);
+            console.log(`  ${chalk.red("\u25CB")} ${b.title} ${chalk.dim(`[${sev}]`)}`);
           }
         }
 
@@ -270,7 +343,7 @@ export function registerBriefingCommand(program: Command): void {
         if (briefing.recentDecisions.length > 0) {
           console.log(`\n${chalk.bold("Recent Decisions")} (${briefing.recentDecisions.length})`);
           for (const d of briefing.recentDecisions) {
-            console.log(`  ${chalk.magenta("◇")} ${d.name}`);
+            console.log(`  ${chalk.magenta("\u25C7")} ${d.name}`);
             if (d.rationale) {
               console.log(`    ${chalk.dim(d.rationale.slice(0, 80))}`);
             }
@@ -290,7 +363,7 @@ export function registerBriefingCommand(program: Command): void {
         if (briefing.conflicts.length > 0) {
           console.log(`\n${chalk.red.bold("Conflicts")} (${briefing.conflicts.length})`);
           for (const c of briefing.conflicts as any[]) {
-            console.log(`  ${chalk.red("⚠")} ${c.reason ?? JSON.stringify(c)}`);
+            console.log(`  ${chalk.red("\u26A0")} ${c.reason ?? JSON.stringify(c)}`);
           }
         }
 

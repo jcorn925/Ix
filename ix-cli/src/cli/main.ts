@@ -34,12 +34,36 @@ import { registerBugsCommand } from "./commands/bugs.js";
 import { registerPlansCommand } from "./commands/plans.js";
 import { registerWatchCommand } from "./commands/watch.js";
 import { registerBriefingCommand } from "./commands/briefing.js";
+import { registerWorkflowsHelpCommand } from "./commands/workflows.js";
+import { registerTasksCommand } from "./commands/tasks.js";
+
+const HELP_HEADER = `
+Workflow Commands (start here):
+  briefing              Session-resume briefing
+  overview <target>     One-shot structural summary
+  impact <target>       Blast-radius / dependency analysis
+  rank                  Hotspot discovery by metric
+  inventory             List entities by kind
+
+Planning & Tracking:
+  plan                  Manage plans (create, task, status, next)
+  task                  Manage tasks (show, update)
+  tasks                 List all tasks across plans
+  bug                   Manage bugs (create, show, update)
+  bugs                  List bugs
+  decide <title>        Record a design decision
+  goal                  Manage project goals
+
+Use "ix help workflows" for the recommended development loop.
+Use "ix <command> --help" for details on any command.
+`;
 
 const program = new Command();
 program
   .name("ix")
   .description("Ix Memory — Persistent Memory for LLM Systems")
-  .version("0.1.0");
+  .version("0.1.0")
+  .addHelpText("beforeAll", HELP_HEADER);
 
 registerQueryCommand(program);
 registerIngestCommand(program);
@@ -76,5 +100,7 @@ registerBugsCommand(program);
 registerPlansCommand(program);
 registerWatchCommand(program);
 registerBriefingCommand(program);
+registerWorkflowsHelpCommand(program);
+registerTasksCommand(program);
 
 program.parse();

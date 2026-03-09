@@ -31,8 +31,8 @@ Start here. These aggregate multiple graph operations into single bounded respon
 | Hotspot discovery | `ix rank` | `ix rank --by dependents --kind class --top 10` |
 | One-shot summary | `ix overview` | `ix overview IngestionService --format json` |
 | Scoped entity listing | `ix inventory` | `ix inventory --kind function --path auth.py` |
-| Plan work | `ix plan` | `ix plan next <plan-id> --format json` |
-| Track decisions | `ix decide` | `ix decide "Use X" --rationale "..." --affects Entity` |
+| Plan work | `ix plan` | `ix plan task "title" --plan <id> --resolves <bugId> --workflow-staged '{"discover":["cmd"]}' --format json` |
+| Track decisions | `ix decide` | `ix decide "Use X" --rationale "..." --affects Entity --responds-to <bugId>` |
 | Create goals | `ix goal` | `ix goal create "Support GitHub" --format json` |
 | Session resume | `ix briefing` | `ix briefing --format json` |
 | Track bugs | `ix bug` | `ix bug create "title" --affects Entity` |
@@ -68,7 +68,7 @@ Underlying structural commands — useful for debugging or fine-grained inspecti
 | Entity history | `ix history` | `ix history <entityId>` |
 | Changes between revisions | `ix diff` | `ix diff 1 5 --summary --format json` |
 | Detect contradictions | `ix conflicts` | `ix conflicts --format json` |
-| Record a decision | `ix decide` | `ix decide "Use CONTAINS" --rationale "Normalize edges"` |
+| Record a decision | `ix decide` | `ix decide "Use CONTAINS" --rationale "Normalize edges" --responds-to <bugId>` |
 | Record a goal | `ix truth add` | `ix truth add "Support 100k file repos"` |
 | List goals | `ix truth list` | `ix truth list --format json` |
 | Bug tracking | `ix bug create` | `ix bug create "title" --severity high --affects Entity` |

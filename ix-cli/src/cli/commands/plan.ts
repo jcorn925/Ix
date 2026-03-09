@@ -7,6 +7,30 @@ import { resolveEntity, printResolved } from "../resolve.js";
 import { stderr } from "../stderr.js";
 import chalk from "chalk";
 
+// ── Types ───────────────────────────────────────────────────────────
+
+export interface StagedWorkflow {
+  discover?: string[];
+  implement?: string[];
+  validate?: string[];
+}
+
+const VALID_WORKFLOW_STAGES = ["discover", "implement", "validate"];
+
+export function isValidWorkflow(w: unknown): w is string[] | StagedWorkflow {
+  if (Array.isArray(w)) return w.every(s => typeof s === "string");
+  if (typeof w === "object" && w !== null) {
+    return Object.keys(w).every(k => VALID_WORKFLOW_STAGES.includes(k));
+  }
+  return false;
+}
+
+/** Normalize any workflow form to StagedWorkflow for display */
+function normalizeWorkflow(w: string[] | StagedWorkflow): StagedWorkflow {
+  if (Array.isArray(w)) return { discover: w };
+  return w;
+}
+
 // ── Patch builders (exported for testing) ──────────────────────────
 
 function makePatchEnvelope(ops: PatchOp[], intent?: string): GraphPatchPayload {
@@ -65,7 +89,8 @@ export interface TaskOpts {
   planId: string;
   dependsOn?: string;
   affects?: { id: string; kind: string; name: string }[];
-  workflow?: string[];
+  workflow?: string[] | StagedWorkflow;
+  resolves?: string;
 }
 
 export function buildTaskPatch(title: string, opts: TaskOpts): GraphPatchPayload {
@@ -119,6 +144,17 @@ export function buildTaskPatch(title: string, opts: TaskOpts): GraphPatchPayload
     }
   }
 
+  if (opts.resolves) {
+    ops.push({
+      type: "UpsertEdge",
+      id: deterministicId(`${taskId}:TASK_RESOLVES_BUG:${opts.resolves}`),
+      src: taskId,
+      dst: opts.resolves,
+      predicate: "TASK_RESOLVES_BUG",
+      attrs: {},
+    });
+  }
+
   return makePatchEnvelope(ops, `Create task: ${title}`);
 }
 
@@ -150,7 +186,21 @@ const STATUS_ICONS: Record<string, string> = {
 export function registerPlanCommand(program: Command): void {
   const plan = program
     .command("plan")
-    .description("Manage plans and plan tasks");
+    .description("Manage plans and plan tasks")
+    .addHelpText(
+      "after",
+      `\nSubcommands:
+  create <title>   Create a new plan linked to a goal
+  task <title>     Add a task to a plan
+  status <planId>  Show plan status with all tasks
+  next <planId>    Show the next actionable task
+
+Examples:
+  ix plan create "Fix auth" --goal <goal-id>
+  ix plan task "Step 1" --plan <plan-id>
+  ix plan status <plan-id> --format json
+  ix plan next <plan-id> --with-workflow`
+    );
 
   plan
     .command("create <title>")
@@ -177,8 +227,10 @@ export function registerPlanCommand(program: Command): void {
     .option("--depends-on <id>", "Task ID this task depends on")
     .option("--affects <entities>", "Comma-separated entity names this task affects")
     .option("--workflow <commands>", "Comma-separated ix commands to run for this task")
+    .option("--workflow-staged <json>", "Staged workflow as JSON (keys: discover, implement, validate)")
+    .option("--resolves <bugId>", "Bug ID this task resolves (creates TASK_RESOLVES_BUG edge)")
     .option("--format <fmt>", "Output format (text|json)", "text")
-    .action(async (title: string, opts: { plan: string; dependsOn?: string; affects?: string; workflow?: string; format: string }) => {
+    .action(async (title: string, opts: { plan: string; dependsOn?: string; affects?: string; workflow?: string; workflowStaged?: string; resolves?: string; format: string }) => {
       const client = new IxClient(getEndpoint());
 
       let affectsEntities: { id: string; kind: string; name: string }[] | undefined;
@@ -196,15 +248,31 @@ export function registerPlanCommand(program: Command): void {
         }
       }
 
-      const workflowArr = opts.workflow
-        ? opts.workflow.split(",").map(s => s.trim())
-        : undefined;
+      let workflow: string[] | StagedWorkflow | undefined;
+      if (opts.workflowStaged) {
+        try {
+          const parsed = JSON.parse(opts.workflowStaged);
+          if (!isValidWorkflow(parsed) || Array.isArray(parsed)) {
+            stderr(`Invalid staged workflow JSON. Valid keys: ${VALID_WORKFLOW_STAGES.join(", ")}`);
+            process.exitCode = 1;
+            return;
+          }
+          workflow = parsed as StagedWorkflow;
+        } catch {
+          stderr("Invalid JSON for --workflow-staged");
+          process.exitCode = 1;
+          return;
+        }
+      } else if (opts.workflow) {
+        workflow = opts.workflow.split(",").map(s => s.trim());
+      }
 
       const patch = buildTaskPatch(title, {
         planId: opts.plan,
         dependsOn: opts.dependsOn,
         affects: affectsEntities,
-        workflow: workflowArr,
+        workflow,
+        resolves: opts.resolves,
       });
       const result = await client.commitPatch(patch);
       const taskId = patch.ops[0].id as string;
@@ -275,12 +343,20 @@ export function registerPlanCommand(program: Command): void {
         .filter(([, count]) => count > 0)
         .map(([id]) => id);
 
+      // Count open bugs linked via RESPONDS_TO
+      const { nodes: respondNodes } = await client.expand(planId, {
+        direction: "out",
+        predicates: ["RESPONDS_TO"],
+      });
+      const openBugCount = respondNodes.filter((n: any) => n.kind === "bug").length;
+
       const summary = {
         total: tasks.length,
         done: tasks.filter(t => t.status === "done").length,
         pending: tasks.filter(t => t.status === "pending").length,
         inProgress: tasks.filter(t => t.status === "in_progress").length,
         blocked: tasks.filter(t => t.status === "blocked").length,
+        openBugCount,
       };
 
       if (opts.format === "json") {
@@ -338,6 +414,18 @@ export function registerPlanCommand(program: Command): void {
         t.dependsOn.every(dep => doneIds.has(dep))
       );
 
+      // Determine reason when no actionable task
+      let noActionReason = "no actionable tasks";
+      if (!nextActionable) {
+        if (tasks.length === 0) {
+          noActionReason = "no tasks in plan";
+        } else if (tasks.every(t => t.status === "done" || t.status === "abandoned")) {
+          noActionReason = "all tasks done";
+        } else {
+          noActionReason = "all remaining tasks blocked";
+        }
+      }
+
       if (opts.format === "json") {
         if (nextActionable) {
           const result: Record<string, unknown> = {
@@ -347,28 +435,37 @@ export function registerPlanCommand(program: Command): void {
           };
           if (opts.withWorkflow) {
             const detail = await client.entity(nextActionable.id);
-            const workflow = (detail.node?.attrs?.workflow as string[] | undefined) ?? [];
-            result.workflow = workflow;
+            const rawWorkflow = detail.node?.attrs?.workflow;
+            result.workflow = rawWorkflow
+              ? normalizeWorkflow(rawWorkflow as string[] | StagedWorkflow)
+              : {};
           }
           console.log(JSON.stringify(result, null, 2));
         } else {
-          console.log(JSON.stringify({ task: null, reason: "no actionable tasks" }, null, 2));
+          console.log(JSON.stringify({ task: null, reason: noActionReason }, null, 2));
         }
       } else {
         if (nextActionable) {
           console.log(`${chalk.green("Next:")} ${nextActionable.title} (${nextActionable.id.slice(0, 8)})`);
           if (opts.withWorkflow) {
             const detail = await client.entity(nextActionable.id);
-            const workflow = (detail.node?.attrs?.workflow as string[] | undefined) ?? [];
-            if (workflow.length > 0) {
+            const rawWorkflow = detail.node?.attrs?.workflow;
+            if (rawWorkflow) {
+              const staged = normalizeWorkflow(rawWorkflow as string[] | StagedWorkflow);
               console.log(chalk.dim("Workflow:"));
-              for (const cmd of workflow) {
-                console.log(`  ${chalk.cyan("▸")} ${cmd}`);
+              for (const stage of VALID_WORKFLOW_STAGES) {
+                const cmds = staged[stage as keyof StagedWorkflow];
+                if (cmds && cmds.length > 0) {
+                  console.log(`  ${chalk.bold(stage)}:`);
+                  for (const cmd of cmds) {
+                    console.log(`    ${chalk.cyan("▸")} ${cmd}`);
+                  }
+                }
               }
             }
           }
         } else {
-          console.log(chalk.dim("No actionable tasks."));
+          console.log(chalk.dim(`No actionable tasks: ${noActionReason}`));
         }
       }
     });
@@ -377,7 +474,17 @@ export function registerPlanCommand(program: Command): void {
 export function registerTaskCommand(program: Command): void {
   const task = program
     .command("task")
-    .description("Manage tasks");
+    .description("Manage tasks")
+    .addHelpText(
+      "after",
+      `\nSubcommands:
+  show <taskId>    Show task details
+  update <taskId>  Update a task's status
+
+Examples:
+  ix task show <task-id> --with-workflow
+  ix task update <task-id> --status done`
+    );
 
   task
     .command("show <taskId>")
@@ -396,7 +503,7 @@ export function registerTaskCommand(program: Command): void {
         ? ((statusClaim as any).value ?? (statusClaim as any).statement ?? "pending")
         : (node.attrs?.status ?? "pending");
 
-      const workflow = (node.attrs?.workflow as string[] | undefined) ?? [];
+      const rawWorkflow = node.attrs?.workflow as string[] | StagedWorkflow | undefined;
 
       if (opts.format === "json") {
         const result: Record<string, unknown> = {
@@ -406,17 +513,26 @@ export function registerTaskCommand(program: Command): void {
           created_at: node.attrs?.created_at ?? node.createdAt,
         };
         if (opts.withWorkflow) {
-          result.workflow = workflow;
+          result.workflow = rawWorkflow
+            ? normalizeWorkflow(rawWorkflow)
+            : {};
         }
         console.log(JSON.stringify(result, null, 2));
       } else {
         const icon = STATUS_ICONS[status] ?? "?";
         console.log(`${icon} ${chalk.bold(node.name)}`);
         console.log(`  Status: ${status}`);
-        if (opts.withWorkflow && workflow.length > 0) {
+        if (opts.withWorkflow && rawWorkflow) {
+          const staged = normalizeWorkflow(rawWorkflow);
           console.log(chalk.dim("  Workflow:"));
-          for (const cmd of workflow) {
-            console.log(`    ${chalk.cyan("▸")} ${cmd}`);
+          for (const stage of VALID_WORKFLOW_STAGES) {
+            const cmds = staged[stage as keyof StagedWorkflow];
+            if (cmds && cmds.length > 0) {
+              console.log(`    ${chalk.bold(stage)}:`);
+              for (const cmd of cmds) {
+                console.log(`      ${chalk.cyan("▸")} ${cmd}`);
+              }
+            }
           }
         }
       }
