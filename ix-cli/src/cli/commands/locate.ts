@@ -48,6 +48,9 @@ export function registerLocateCommand(program: Command): void {
         if (err.code !== 1 && err.status !== 1 && err.code !== "ENOENT") throw err;
       }
 
+      // Cap text hits to prevent oversized output
+      textHits = textHits.slice(0, 10);
+
       // Step 3: Build results — graph entities first, then unmatched text hits
       const results: LocateResult[] = [];
       for (const node of graphNodes) {
