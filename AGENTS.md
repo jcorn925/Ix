@@ -34,6 +34,7 @@ JSON output is strict — no text preamble or postamble. The output is a single 
 | `ambiguous_resolution` | Multiple entities matched; specify `--kind` or use entity ID |
 | `text_fallback_used` | Graph had no results; text search was used instead |
 | `parser_gap_suspected` | Results suggest the parser did not fully index this area |
+| `unfiltered_search` | No `--kind` filter used; results may be broad |
 
 ## Result entities
 
@@ -71,6 +72,8 @@ ix decide <title> --rationale <text> --affects <entities> --format json  # Recor
 - "What are the most important classes?" → `ix rank --by dependents --kind class --top 10`
 - "Tell me about UserService" → `ix overview UserService`
 - "List all functions in auth.py" → `ix inventory --kind function --path auth.py`
+- "List all classes" → `ix inventory --kind class`
+- "What are the most critical methods?" → `ix rank --by callers --kind method --top 10`
 
 ### Low-level structural primitives
 
@@ -78,7 +81,8 @@ Useful for debugging, fine-grained inspection, or when high-level commands don't
 
 #### Finding code
 ```
-ix search <term> --format json --limit 10
+# Always use --kind with search to get bounded results
+ix search <term> --kind <kind> --format json --limit 10
 ix text <term> --format json --language python
 ix locate <symbol> --format json
 ix read <file:lines>

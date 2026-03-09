@@ -107,7 +107,8 @@ ix inventory --kind function --format json
 ```
 
 ### Best Practices
-- Always use `--kind` to filter entity type when searching
+- Always use `--kind` with `ix search` to get bounded results
+- Use `ix inventory` instead of `ix search ""` for listing entities by kind
 - Always use `--limit` to cap result sets
 - Use `--format json` when chaining results between commands
 - Use `--path` or `--language` to restrict text searches
