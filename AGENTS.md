@@ -6,8 +6,6 @@ This file tells automated agents (Codex, Claude, etc.) how to use the `ix` CLI e
 
 Use the `ix` CLI exclusively. All commands support `--format json` for machine-readable output.
 
-**Do NOT use MCP tools** — the CLI is the canonical agent interface.
-
 ## JSON Mode
 
 Always use `--format json` when chaining commands or parsing results programmatically.
@@ -62,6 +60,10 @@ ix impact <target> --format json          # Blast radius / dependency consequenc
 ix rank --by <metric> --kind <kind> --top N --format json   # Hotspot discovery
 ix overview <target> --format json        # One-shot structural summary of a component
 ix inventory --kind <kind> --format json  # Scoped entity listing
+ix goal create <statement> --format json      # Create a project goal
+ix plan create <title> --goal <id> --format json  # Create a plan
+ix plan next <plan-id> --format json          # Next actionable task
+ix decide <title> --rationale <text> --affects <entities> --format json  # Record linked decision
 ```
 
 **When to use which:**
@@ -110,6 +112,18 @@ ix ingest --github owner/repo --since 2026-01-01 --format json
 ix decisions --format json
 ix history <id> --format json
 ix diff <from> <to> --format json
+```
+
+### Planning & decisions
+```
+ix goal create "GitHub ingestion pipeline" --format json
+ix goal list --format json
+ix plan create "GitHub Ingestion" --goal <goal-id> --format json
+ix plan task "API fetch layer" --plan <plan-id> --depends-on <task-id> --format json
+ix plan status <plan-id> --format json
+ix plan next <plan-id> --format json
+ix task update <task-id> --status done --format json
+ix decide "Use client-side patch" --rationale "..." --affects IngestionService --format json
 ```
 
 ## Chaining pattern

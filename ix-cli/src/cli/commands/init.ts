@@ -53,6 +53,15 @@ Use bounded, composable CLI commands — never broad queries.
 - \`ix diff <from> <to>\` — changes between revisions
 - \`ix conflicts\` — detect contradictions
 
+### Planning & Goals
+- \`ix goal create <statement>\` — create a project goal
+- \`ix goal list\` — list all goals
+- \`ix plan create <title> --goal <id>\` — create a plan linked to a goal
+- \`ix plan task <title> --plan <id>\` — add a task to a plan
+- \`ix plan next <plan-id>\` — get the next actionable task
+- \`ix task update <id> --status done\` — update task status
+- \`ix decide <title> --rationale <text> --affects <entities>\` — record a linked decision
+
 ### Best practices
 - Use \`--kind\` and \`--limit\` to constrain results
 - Use \`--format json\` when chaining command results

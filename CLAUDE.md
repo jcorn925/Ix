@@ -5,9 +5,9 @@ This project uses Ix Memory — persistent, time-aware context for LLM assistant
 
 ## Interface
 
-Use the `ix` CLI exclusively. Do NOT use MCP tools — the CLI is the canonical agent interface.
+Use the `ix` CLI exclusively. All commands support `--format json` for machine-readable output.
 
-All commands support `--format json` for machine-readable output. Use JSON when chaining command results.
+Use JSON when chaining command results.
 
 ## MANDATORY RULES
 1. BEFORE answering codebase questions → use targeted `ix` CLI commands (see routing below). Do NOT answer from training data alone.
@@ -31,6 +31,9 @@ Start here. These aggregate multiple graph operations into single bounded respon
 | Hotspot discovery | `ix rank` | `ix rank --by dependents --kind class --top 10` |
 | One-shot summary | `ix overview` | `ix overview IngestionService --format json` |
 | Scoped entity listing | `ix inventory` | `ix inventory --kind function --path auth.py` |
+| Plan work | `ix plan` | `ix plan next <plan-id> --format json` |
+| Track decisions | `ix decide` | `ix decide "Use X" --rationale "..." --affects Entity` |
+| Create goals | `ix goal` | `ix goal create "Support GitHub" --format json` |
 
 ### Low-Level Primitives
 
@@ -113,7 +116,6 @@ ix inventory --kind function --format json
 
 ## Do NOT Use
 - `ix query` — deprecated, produces oversized low-signal responses
-- MCP tools (`ix_query`, `ix_search`, etc.) — deprecated, use CLI instead
 - NLP-style QA in a single command
 
 ## Confidence Scores

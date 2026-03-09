@@ -6,7 +6,7 @@ It has two runtime parts:
 - `memory-layer` (Scala HTTP API)
 - `ix-cli` (TypeScript CLI; canonical interface)
 
-MCP is still present for compatibility, but the primary interface is `ix` CLI commands.
+The primary interface is `ix` CLI commands.
 
 ## What It Supports Today
 
@@ -112,6 +112,18 @@ Auth resolution order:
 2. `GITHUB_TOKEN`
 3. `gh auth token`
 
+## Planning & Tasks
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `ix goal create` | `ix goal create <statement>` | Create a project goal |
+| `ix goal list` | `ix goal list` | List all goals |
+| `ix plan create` | `ix plan create <title> --goal <id>` | Create a plan linked to a goal |
+| `ix plan task` | `ix plan task <title> --plan <id>` | Add a task to a plan |
+| `ix plan status` | `ix plan status <plan-id>` | Show plan progress and next task |
+| `ix plan next` | `ix plan next <plan-id>` | Get the next actionable task |
+| `ix task update` | `ix task update <id> --status done` | Update task status |
+
 ## Useful Scripts
 
 | Script | Purpose |
@@ -147,14 +159,12 @@ sbt memoryLayer/test
 - Many Scala tests require a live ArangoDB instance; if it is down, DB/API/E2E specs fail.
 - `TreeSitterPythonParser` still contains a TODO for full AST traversal fallback behavior.
 - `ix query` remains available but is deprecated in help text and templates.
-- `connect.sh` still sets MCP config for IDE compatibility; CLI remains canonical.
+- `connect.sh` sets up project config; CLI remains canonical.
 
 ## Architecture
 
 ```text
 ix-cli  --->  memory-layer (http4s)  --->  ArangoDB
-   \
-    \--> mcp server (compatibility mode)
 ```
 
 ## License
