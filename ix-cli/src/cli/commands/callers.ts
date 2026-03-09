@@ -6,6 +6,7 @@ import { IxClient } from "../../client/api.js";
 import { getEndpoint, resolveWorkspaceRoot } from "../config.js";
 import { formatEdgeResults } from "../format.js";
 import { resolveEntity, printResolved } from "../resolve.js";
+import { stderr } from "../stderr.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,22 +39,28 @@ export function registerCallersCommand(program: Command): void {
             "--json", "--max-count", "10", target.name, root,
           ], { maxBuffer: 5 * 1024 * 1024 });
 
-          const textResults: any[] = [];
+          const allTextResults: any[] = [];
           for (const line of stdout.split("\n")) {
             if (!line.trim()) continue;
             try {
               const parsed = JSON.parse(line);
               if (parsed.type === "match") {
                 const data = parsed.data;
-                textResults.push({
+                allTextResults.push({
                   id: "",
                   kind: "text-match",
                   name: `${data.path?.text ?? ""}:${data.line_number ?? 0}`,
+                  resolved: false,
+                  path: data.path?.text ?? "",
+                  line: data.line_number ?? 0,
                   attrs: { snippet: data.lines?.text?.trim() ?? "" },
                 });
               }
             } catch { /* skip malformed lines */ }
           }
+
+          const candidatesFound = allTextResults.length;
+          const textResults = allTextResults.slice(0, 10);
 
           if (textResults.length > 0) {
             if (opts.format === "json") {
@@ -61,13 +68,23 @@ export function registerCallersCommand(program: Command): void {
                 results: textResults,
                 resultSource: "text",
                 resolvedTarget: target,
-                warning: "No graph-backed callers found; showing text-based candidate usages.",
+                summary: {
+                  candidatesFound,
+                  candidatesReturned: textResults.length,
+                },
+                diagnostics: [{
+                  code: "text_fallback_used",
+                  message: "No graph-backed callers found; showing bounded lexical candidates.",
+                }],
               }, null, 2));
             } else {
-              console.log(chalk.dim("No graph-backed callers found. Showing text-based candidate usages.\n"));
-              for (const r of textResults.slice(0, 10)) {
+              stderr(chalk.dim("No graph-backed callers found. Showing text-based candidate usages.\n"));
+              for (const r of textResults) {
                 const snippet = r.attrs?.snippet ?? "";
                 console.log(`  ${chalk.dim(r.name)}  ${snippet}`);
+              }
+              if (candidatesFound > 10) {
+                stderr(chalk.dim(`\n  (${candidatesFound} total candidates; showing 10)`));
               }
             }
             return;
