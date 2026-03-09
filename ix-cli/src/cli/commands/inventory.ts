@@ -24,10 +24,7 @@ Examples:
       const client = new IxClient(getEndpoint());
       const limit = parseInt(opts.limit, 10);
 
-      let nodes = await client.search("", {
-        limit,
-        kind: opts.kind,
-      });
+      let nodes = await client.listByKind(opts.kind, { limit });
 
       if (opts.path) {
         nodes = nodes.filter((n) => {
