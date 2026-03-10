@@ -255,6 +255,10 @@ async function overviewCallable(
   const callers = callersResult.nodes;
   const callees = calleesResult.nodes;
 
+  if (callers.length === 0 && callees.length === 0) {
+    diagnostics.push("No CALLS edges found. If files were ingested before CALLS extraction, run: ix ingest --force --recursive .");
+  }
+
   const decisions = decisionsResult.nodes.map((n: any) => ({
     id: n.id,
     title: n.name || n.attrs?.name || "(unnamed)",
@@ -322,6 +326,12 @@ async function overviewCallable(
       for (const b of bugs) {
         const icon = b.status === "closed" || b.status === "resolved" ? "✓" : "○";
         console.log(`  ${icon} [${b.status}] ${chalk.red(b.severity)} ${b.title}`);
+      }
+    }
+
+    if (diagnostics.length > 0) {
+      for (const d of diagnostics) {
+        console.log(chalk.dim(`\n  ${d}`));
       }
     }
   }

@@ -16,7 +16,8 @@ case class SearchRequest(
   limit: Option[Int] = None,
   kind: Option[String] = None,
   language: Option[String] = None,
-  asOfRev: Option[Long] = None
+  asOfRev: Option[Long] = None,
+  nameOnly: Option[Boolean] = None
 )
 
 object SearchRequest {
@@ -29,7 +30,7 @@ class SearchRoutes(queryApi: GraphQueryApi) {
     case req @ POST -> Root / "v1" / "search" =>
       (for {
         body    <- req.as[SearchRequest]
-        nodes   <- queryApi.searchNodes(body.term, body.limit.getOrElse(20), body.kind, body.language, body.asOfRev.map(Rev(_)))
+        nodes   <- queryApi.searchNodes(body.term, body.limit.getOrElse(20), body.kind, body.language, body.asOfRev.map(Rev(_)), body.nameOnly.getOrElse(false))
         resp    <- Ok(nodes.asJson)
       } yield resp).handleErrorWith(ErrorHandler.handle(_))
   }

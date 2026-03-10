@@ -19,11 +19,11 @@ export class IxClient {
     return this.post("/v1/context", { query: question, ...opts });
   }
 
-  async ingest(path: string, recursive?: boolean): Promise<IngestResult> {
+  async ingest(path: string, recursive?: boolean, force?: boolean): Promise<IngestResult> {
     const resp = await fetch(`${this.endpoint}/v1/ingest`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, recursive }),
+      body: JSON.stringify({ path, recursive, force: force || undefined }),
       signal: AbortSignal.timeout(30 * 60 * 1000), // 30 minute timeout for large repos
     });
     if (!resp.ok) {
@@ -43,7 +43,7 @@ export class IxClient {
 
   async search(
     term: string,
-    opts?: { limit?: number; kind?: string; language?: string; asOfRev?: number }
+    opts?: { limit?: number; kind?: string; language?: string; asOfRev?: number; nameOnly?: boolean }
   ): Promise<GraphNode[]> {
     return this.post("/v1/search", {
       term,
@@ -51,6 +51,7 @@ export class IxClient {
       kind: opts?.kind,
       language: opts?.language,
       asOfRev: opts?.asOfRev,
+      nameOnly: opts?.nameOnly,
     });
   }
 

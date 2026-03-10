@@ -26,13 +26,29 @@ Task Listing:
 
 export function registerWorkflowsHelpCommand(program: Command): void {
   const help = program
-    .command("help")
-    .description("Additional help topics");
+    .command("help [topic]")
+    .description("Additional help topics")
+    .action((topic: string | undefined) => {
+      if (!topic) {
+        // ix help — show full program help
+        program.outputHelp();
+        return;
+      }
 
-  help
-    .command("workflows")
-    .description("Show recommended development workflows")
-    .action(() => {
-      console.log(WORKFLOWS_TEXT);
+      if (topic === "workflows") {
+        console.log(WORKFLOWS_TEXT);
+        return;
+      }
+
+      // Look up the topic as a registered command and show its help
+      const cmd = program.commands.find(
+        (c: Command) => c.name() === topic
+      );
+      if (cmd) {
+        cmd.outputHelp();
+      } else {
+        console.error(`Unknown help topic: "${topic}". Try "ix --help" for available commands.`);
+        process.exitCode = 1;
+      }
     });
 }

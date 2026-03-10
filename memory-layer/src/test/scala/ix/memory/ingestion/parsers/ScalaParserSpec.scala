@@ -163,4 +163,41 @@ class ScalaParserSpec extends AnyFlatSpec with Matchers {
     val obj = result.entities.find(e => e.name == "ConfidenceScorerImpl" && e.kind == NodeKind.Object).get
     obj.attrs.get("scala_kind") shouldBe Some(Json.fromString("object"))
   }
+
+  // --- Symbol span tests ---
+
+  it should "compute lineStart and lineEnd for trait definitions" in {
+    val result = parser.parse("ConfidenceScorer.scala", sampleCode)
+    val tr = result.entities.find(e => e.name == "ConfidenceScorer" && e.kind == NodeKind.Trait).get
+    tr.lineStart should be >= 1
+    tr.lineEnd should be > tr.lineStart
+  }
+
+  it should "compute lineStart and lineEnd for class definitions" in {
+    val result = parser.parse("ConfidenceScorer.scala", sampleCode)
+    val cls = result.entities.find(e => e.name == "ConfidenceScorerImpl" && e.kind == NodeKind.Class).get
+    cls.lineStart should be >= 1
+    cls.lineEnd should be > cls.lineStart
+  }
+
+  it should "compute lineStart and lineEnd for object definitions" in {
+    val result = parser.parse("ConfidenceScorer.scala", sampleCode)
+    val obj = result.entities.find(e => e.name == "ConfidenceScorerImpl" && e.kind == NodeKind.Object).get
+    obj.lineStart should be >= 1
+    obj.lineEnd should be > obj.lineStart
+  }
+
+  it should "compute method spans with valid ranges" in {
+    val result = parser.parse("ConfidenceScorer.scala", sampleCode)
+    val methods = result.entities.filter(_.kind == NodeKind.Method)
+    methods should not be empty
+    methods.foreach { m =>
+      m.lineStart should be >= 1
+      m.lineEnd should be >= m.lineStart
+    }
+    // computeBase is private to ConfidenceScorerImpl — verify it has a bounded span
+    val computeBase = result.entities.find(_.name == "computeBase").get
+    computeBase.lineStart should be > 1
+    computeBase.lineEnd should be > computeBase.lineStart
+  }
 }

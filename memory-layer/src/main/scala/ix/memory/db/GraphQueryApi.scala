@@ -10,7 +10,8 @@ trait GraphQueryApi {
   def listDecisions(limit: Int = 50, topic: Option[String] = None): IO[Vector[GraphNode]]
   def searchNodes(text: String, limit: Int = 20,
                   kind: Option[String] = None, language: Option[String] = None,
-                  asOfRev: Option[Rev] = None): IO[Vector[GraphNode]]
+                  asOfRev: Option[Rev] = None,
+                  nameOnly: Boolean = false): IO[Vector[GraphNode]]
   def expand(nodeId: NodeId, direction: Direction,
              predicates: Option[Set[String]] = None, hops: Int = 1,
              asOfRev: Option[Rev] = None): IO[ExpandResult]

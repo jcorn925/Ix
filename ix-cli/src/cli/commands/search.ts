@@ -13,15 +13,15 @@ const STRUCTURAL_KINDS = new Set([
  * Compute a ranking score for a search result.
  * Lower score = better match.
  *
- * Uses the shared scoreCandidate from resolve.ts as the primary signal,
- * with additional search-specific adjustments.
+ * Combines backend weight (_search_weight from AQL) with client-side
+ * resolver scoring for fine-grained ranking.
  *
  * Tiers (for JSON output):
  *   0 — exact name + exact kind
  *   1 — exact name + structural kind
  *   2 — exact name (any kind)
- *   3 — exact filename/module match
- *   4 — container-aware near match
+ *   3 — partial name match (backend weight 60)
+ *   4 — provenance/claim/decision match
  *   5 — fuzzy/incidental match
  */
 function rankScore(
@@ -29,44 +29,45 @@ function rankScore(
   term: string,
   requestedKind: string | undefined,
   pathFilter: string | undefined
-): number {
-  // Use the shared resolver scoring as the base
+): { tier: number; score: number; matchSource: string } {
+  // Weight is embedded in attrs by the backend AQL (survives parseNode → GraphNode → JSON)
+  const backendWeight: number = node.attrs?._search_weight ?? (node as any)._search_weight ?? 0;
   const resolverScore = scoreCandidate(node, term, { kind: requestedKind, path: pathFilter });
 
-  // Map resolver score ranges to display tiers
-  if (resolverScore <= -8) return 0;  // exact name + kind + path
-  if (resolverScore <= -3) return 0;  // exact name + kind
-  if (resolverScore <= 0) return 1;   // exact name + structural
-  if (resolverScore <= 2) return 2;   // exact name, any kind
-
-  const name: string = (node.name || node.attrs?.name || "").toLowerCase();
-  const termLower = term.toLowerCase();
-  const sourceUri: string = (node.provenance?.sourceUri ?? node.provenance?.source_uri ?? "").toLowerCase();
-  const basename = sourceUri.split("/").pop() ?? "";
-  const basenameNoExt = basename.replace(/\.[^.]+$/, "");
-
-  // Tier 3: entity IS a file/module whose own name matches
-  const kind = (node.kind || "").toLowerCase();
-  if (
-    kind === "file" && (basename === termLower || basenameNoExt === termLower) ||
-    kind === "module" && name === termLower
-  ) {
-    return 3;
+  // Backend weight provides relevance signal, resolver refines within tier
+  if (backendWeight >= 100) {
+    // Exact backend name match — use resolver to sub-rank
+    if (resolverScore <= -3) return { tier: 0, score: -backendWeight + resolverScore, matchSource: "name_exact" };
+    if (resolverScore <= 0) return { tier: 1, score: -backendWeight + resolverScore, matchSource: "name_exact" };
+    return { tier: 2, score: -backendWeight + resolverScore, matchSource: "name_exact" };
+  }
+  if (backendWeight >= 60) {
+    return { tier: 3, score: -backendWeight + resolverScore, matchSource: "name_partial" };
+  }
+  if (backendWeight >= 40) {
+    return { tier: 4, score: -backendWeight, matchSource: "provenance" };
+  }
+  if (backendWeight >= 20) {
+    return { tier: 4, score: -backendWeight, matchSource: "claim_or_decision" };
   }
 
-  // Tier 4: prefix match or name starts with term
-  if (name.startsWith(termLower)) {
-    return 4;
-  }
-
-  return 5;
+  // No backend weight — fall back to pure resolver scoring
+  if (resolverScore <= -8) return { tier: 0, score: resolverScore, matchSource: "resolver" };
+  if (resolverScore <= -3) return { tier: 0, score: resolverScore, matchSource: "resolver" };
+  if (resolverScore <= 0) return { tier: 1, score: resolverScore, matchSource: "resolver" };
+  if (resolverScore <= 2) return { tier: 2, score: resolverScore, matchSource: "resolver" };
+  return { tier: 5, score: resolverScore, matchSource: "attrs" };
 }
 
 /**
- * Full sort key: (tier, structural-boost, name).
+ * Full sort key: (tier, sub-score, structural-boost, name).
  */
-function searchSort(a: { node: any; score: number }, b: { node: any; score: number }): number {
-  if (a.score !== b.score) return a.score - b.score;
+function searchSort(
+  a: { node: any; rank: { tier: number; score: number; matchSource: string } },
+  b: { node: any; rank: { tier: number; score: number; matchSource: string } }
+): number {
+  if (a.rank.tier !== b.rank.tier) return a.rank.tier - b.rank.tier;
+  if (a.rank.score !== b.rank.score) return a.rank.score - b.rank.score;
   // Within same tier: structural kinds first
   const aStructural = STRUCTURAL_KINDS.has((a.node.kind || "").toLowerCase()) ? 0 : 1;
   const bStructural = STRUCTURAL_KINDS.has((b.node.kind || "").toLowerCase()) ? 0 : 1;
@@ -116,15 +117,16 @@ Examples:
         asOfRev: opts.asOf ? parseInt(opts.asOf, 10) : undefined,
       });
 
-      // Re-rank client-side using shared scoring
+      // Re-rank client-side using shared scoring + backend weight
       const scored = nodes.map(n => ({
         node: n,
-        score: rankScore(n, term, opts.kind, opts.path),
+        rank: rankScore(n, term, opts.kind, opts.path),
       }));
 
       scored.sort(searchSort);
 
-      const ranked = scored.slice(0, limit).map(s => s.node);
+      const trimmed = scored.slice(0, limit);
+      const ranked = trimmed.map(s => s.node);
 
       if (opts.format === "json") {
         const diagnostics: { code: string; message: string }[] = [];
@@ -135,13 +137,15 @@ Examples:
           });
         }
         console.log(JSON.stringify({
-          results: ranked.map((n, i) => ({
-            id: n.id,
-            name: n.name || (n.attrs as any)?.name || "(unnamed)",
-            kind: n.kind,
-            path: n.provenance?.sourceUri ?? undefined,
+          results: trimmed.map((s, i) => ({
+            id: s.node.id,
+            name: s.node.name || (s.node.attrs as any)?.name || "(unnamed)",
+            kind: s.node.kind,
+            path: s.node.provenance?.sourceUri ?? undefined,
             rank: i + 1,
-            tier: scored.find(s => s.node === n)?.score ?? 5,
+            tier: s.rank.tier,
+            score: s.rank.score,
+            matchSource: s.rank.matchSource,
           })),
           summary: {
             count: ranked.length,

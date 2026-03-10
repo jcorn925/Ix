@@ -42,12 +42,13 @@ class BulkIngestionService(
     path: Path,
     language: Option[String],
     recursive: Boolean,
-    onProgress: IngestionProgress => IO[Unit] = _ => IO.unit
+    onProgress: IngestionProgress => IO[Unit] = _ => IO.unit,
+    force: Boolean = false
   ): IO[IngestionResult] = {
     for {
       files      <- discoverFiles(path, language, recursive)
       _          <- onProgress(IngestionProgress(files.size, 0, 0, 0))
-      hashMap    <- loadExistingHashes(files)
+      hashMap    <- if (force) IO.pure(Map.empty[String, String]) else loadExistingHashes(files)
       outcomes   <- files.parTraverseN(parallelism) { f =>
         parseFile(f, hashMap).handleErrorWith { err =>
           logger.warn(s"Parse error: ${f.toString} — ${err.getMessage}") *>

@@ -54,6 +54,29 @@ Planning & Tracking:
   decide <title>        Record a design decision
   goal                  Manage project goals
 
+Core Graph / Code Commands:
+  read <target>         Read file content or symbol source code
+  search <term>         Search the knowledge graph by term
+  locate <symbol>       Resolve symbol to definition with context
+  contains <symbol>     Show members of a class/module/file
+  callers <symbol>      Show callers of a function/method
+  callees <symbol>      Show callees of a function/method
+  imports <symbol>      Show what an entity imports
+  imported-by <symbol>  Show what imports an entity
+  depends <symbol>      Show reverse dependencies
+  entity <id>           Get entity details with claims and edges
+  explain <symbol>      Explain an entity with history
+
+Diagnostics / State / History:
+  ingest [path]         Ingest source files or GitHub data
+  status                Show backend health
+  stats                 Show graph statistics
+  doctor                Check system health
+  history <entityId>    Show entity provenance chain
+  diff <from> <to>      Show diff between revisions
+  truth                 Manage project intents
+  text <term>           Fast lexical/text search (ripgrep)
+
 Use "ix help workflows" for the recommended development loop.
 Use "ix <command> --help" for details on any command.
 `;
@@ -63,7 +86,7 @@ program
   .name("ix")
   .description("Ix Memory — Persistent Memory for LLM Systems")
   .version("0.1.0")
-  .addHelpText("beforeAll", HELP_HEADER);
+  .addHelpText("before", HELP_HEADER);
 
 registerQueryCommand(program);
 registerIngestCommand(program);

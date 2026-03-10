@@ -19,22 +19,25 @@ export function registerIngestCommand(program: Command): void {
   program
     .command("ingest [path]")
     .description("Ingest source files or GitHub data into the knowledge graph")
+    .option("--path <dir>", "Path to ingest (alternative to positional argument)")
     .option("--recursive", "Recursively ingest directory")
     .option("--github <owner/repo>", "Ingest issues, PRs, and commits from a GitHub repository")
     .option("--token <pat>", "GitHub personal access token")
     .option("--since <date>", "Only fetch items updated after this date (ISO 8601)")
     .option("--limit <n>", "Max items per category (default 50)", "50")
+    .option("--force", "Force re-ingest even if files are unchanged (useful after parser upgrades)")
     .option("--format <fmt>", "Output format (text|json)", "text")
     .option("--root <dir>", "Workspace root directory")
-    .addHelpText("after", "\nExamples:\n  ix ingest ./src --recursive\n  ix ingest --github owner/repo\n  ix ingest --github owner/repo --since 2026-01-01 --limit 20 --format json\n  ix ingest --github owner/repo --token ghp_xxxx")
-    .action(async (path: string | undefined, opts: {
-      recursive?: boolean; github?: string; token?: string;
+    .addHelpText("after", "\nExamples:\n  ix ingest ./src --recursive\n  ix ingest --path ./src --recursive --force\n  ix ingest --github owner/repo\n  ix ingest --github owner/repo --since 2026-01-01 --limit 20 --format json\n  ix ingest --github owner/repo --token ghp_xxxx")
+    .action(async (positionalPath: string | undefined, opts: {
+      path?: string; recursive?: boolean; force?: boolean; github?: string; token?: string;
       since?: string; limit: string; format: string; root?: string
     }) => {
+      const effectivePath = positionalPath ?? opts.path;
       if (opts.github) {
         await ingestGitHub(opts);
-      } else if (path) {
-        await ingestFiles(path, opts);
+      } else if (effectivePath) {
+        await ingestFiles(effectivePath, opts);
       } else {
         console.error("Error: provide a <path> or use --github <owner/repo>");
         process.exit(1);
@@ -44,7 +47,7 @@ export function registerIngestCommand(program: Command): void {
 
 async function ingestFiles(
   path: string,
-  opts: { recursive?: boolean; format: string; root?: string }
+  opts: { recursive?: boolean; force?: boolean; format: string; root?: string }
 ): Promise<void> {
   const resolvedPath = nodePath.isAbsolute(path)
     ? path
@@ -60,7 +63,7 @@ async function ingestFiles(
   }, 200) : null;
 
   try {
-    const result = await client.ingest(resolvedPath, opts.recursive);
+    const result = await client.ingest(resolvedPath, opts.recursive, opts.force);
     if (interval) {
       clearInterval(interval);
       process.stderr.write("\r" + " ".repeat(40) + "\r");

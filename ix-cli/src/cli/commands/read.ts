@@ -4,7 +4,7 @@ import type { Command } from "commander";
 import chalk from "chalk";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint, resolveWorkspaceRoot } from "../config.js";
-import { resolveEntity } from "../resolve.js";
+import { resolveEntityFull } from "../resolve.js";
 import { stderr } from "../stderr.js";
 import { isFileStale } from "../stale.js";
 
@@ -308,35 +308,32 @@ type SymbolResult =
 /**
  * Search the graph for a symbol using the shared scored resolver.
  * read prefers file/structural entities (class, object, file) before methods/functions.
+ *
+ * Calls resolveEntityFull once to avoid duplicate ambiguity output.
  */
 async function trySymbolMatch(
   client: IxClient,
   symbol: string,
   opts: { kind?: string; path?: string }
 ): Promise<SymbolResult> {
-  // Prefer containers first — read wants to dump whole file/class bodies, not random methods
   const preferredKinds = ["file", "class", "object", "trait", "interface", "module", "function", "method"];
+  const full = await resolveEntityFull(client, symbol, preferredKinds, opts);
 
-  const resolved = await resolveEntity(client, symbol, preferredKinds, opts);
-  if (!resolved) {
-    // resolveEntity already printed ambiguity/not-found to stderr
-    // but we need to check if it was ambiguous for structured output
-    const { resolveEntityFull } = await import("../resolve.js");
-    const full = await resolveEntityFull(client, symbol, preferredKinds, opts);
-    if (!full.resolved && full.ambiguous) {
-      return {
-        type: "ambiguous",
-        candidates: full.result.candidates.map(c => ({
-          name: c.name, kind: c.kind, path: c.path, id: c.id,
-        })),
-      };
-    }
-    return { type: "not-found" };
+  if (full.resolved) {
+    const details = await client.entity(full.entity.id);
+    const fullNode = details.node as any;
+    const sourceUri = fullNode.provenance?.source_uri ?? fullNode.provenance?.sourceUri ?? null;
+    return { type: "resolved", node: fullNode, sourceUri };
   }
 
-  // Fetch full entity details for source extraction
-  const details = await client.entity(resolved.id);
-  const fullNode = details.node as any;
-  const sourceUri = fullNode.provenance?.source_uri ?? fullNode.provenance?.sourceUri ?? null;
-  return { type: "resolved", node: fullNode, sourceUri };
+  if (full.ambiguous) {
+    return {
+      type: "ambiguous",
+      candidates: full.result.candidates.map(c => ({
+        name: c.name, kind: c.kind, path: c.path, id: c.id,
+      })),
+    };
+  }
+
+  return { type: "not-found" };
 }

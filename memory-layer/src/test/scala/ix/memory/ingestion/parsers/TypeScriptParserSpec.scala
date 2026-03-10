@@ -318,4 +318,77 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
     fetch.attrs.get("signature").flatMap(_.asString) shouldBe defined
     fetch.attrs("signature").asString.get should include("fetch")
   }
+
+  // --- Symbol span tests ---
+
+  it should "compute lineStart and lineEnd for classes" in {
+    val source = """// header
+      |
+      |export class UserService {
+      |  getUser(id: string): User {
+      |    return this.db.find(id);
+      |  }
+      |}
+      |
+      |// footer
+    """.stripMargin
+    val result = parser.parse("service.ts", source)
+    val cls = result.entities.find(e => e.name == "UserService" && e.kind == NodeKind.Class).get
+    cls.lineStart should be >= 1
+    cls.lineEnd should be > cls.lineStart
+  }
+
+  it should "extract CALLS between module-level functions" in {
+    val source = """
+      |export async function resolveEntityFull(client: any, symbol: string) {
+      |  const result = pickBest(candidates, symbol);
+      |  return result;
+      |}
+      |
+      |function pickBest(candidates: any[], symbol: string) {
+      |  return candidates[0];
+      |}
+    """.stripMargin
+    val result = parser.parse("resolve.ts", source)
+    result.relationships.exists(r =>
+      r.srcName == "resolveEntityFull" && r.dstName == "pickBest" && r.predicate == "CALLS"
+    ) shouldBe true
+  }
+
+  it should "extract CALLS for await-prefixed function calls" in {
+    val source = """
+      |async function processData(url: string) {
+      |  const data = await fetchRemote(url);
+      |  return transform(data);
+      |}
+    """.stripMargin
+    val result = parser.parse("process.ts", source)
+    result.relationships.exists(r =>
+      r.srcName == "processData" && r.dstName == "fetchRemote" && r.predicate == "CALLS"
+    ) shouldBe true
+    result.relationships.exists(r =>
+      r.srcName == "processData" && r.dstName == "transform" && r.predicate == "CALLS"
+    ) shouldBe true
+  }
+
+  it should "compute method spans bounded within their class" in {
+    val source = """export class Api {
+      |  fetch(url: string) {
+      |    return url;
+      |  }
+      |
+      |  parse(data: string) {
+      |    return data;
+      |  }
+      |}
+    """.stripMargin
+    val result = parser.parse("api.ts", source)
+    val cls = result.entities.find(e => e.name == "Api" && e.kind == NodeKind.Class).get
+    val methods = result.entities.filter(_.kind == NodeKind.Method)
+    methods should not be empty
+    methods.foreach { m =>
+      m.lineStart should be >= cls.lineStart
+      m.lineEnd should be <= cls.lineEnd
+    }
+  }
 }

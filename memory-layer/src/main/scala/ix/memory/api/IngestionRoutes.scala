@@ -12,7 +12,7 @@ import org.http4s.dsl.io._
 import ix.memory.ingestion.{BulkIngestionService, IngestionProgress, IngestionService}
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-case class IngestRequest(path: String, language: Option[String], recursive: Option[Boolean])
+case class IngestRequest(path: String, language: Option[String], recursive: Option[Boolean], force: Option[Boolean])
 
 object IngestRequest {
   implicit val decoder: Decoder[IngestRequest] = deriveDecoder[IngestRequest]
@@ -50,7 +50,7 @@ class IngestionRoutes(ingestionService: IngestionService, bulkIngestionService: 
           new IllegalArgumentException("Path traversal not allowed")
         )
         path      = Paths.get(body.path)
-        result   <- bulkIngestionService.ingestPath(path, body.language, body.recursive.getOrElse(false), progressLog)
+        result   <- bulkIngestionService.ingestPath(path, body.language, body.recursive.getOrElse(false), progressLog, body.force.getOrElse(false))
         resp     <- Ok(IngestResponse(
           filesProcessed  = result.filesProcessed,
           patchesApplied  = result.patchesApplied,

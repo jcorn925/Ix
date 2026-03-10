@@ -122,7 +122,7 @@ export async function resolveEntityFull(
   opts?: { kind?: string; path?: string }
 ): Promise<ResolveResult> {
   const kindFilter = opts?.kind;
-  const nodes = await client.search(symbol, { limit: 20, kind: kindFilter });
+  const nodes = await client.search(symbol, { limit: 20, kind: kindFilter, nameOnly: true });
 
   if (nodes.length === 0) {
     stderr(`No entity found matching "${symbol}".`);

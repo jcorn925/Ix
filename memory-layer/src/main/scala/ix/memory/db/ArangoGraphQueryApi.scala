@@ -75,7 +75,8 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
     limit: Int = 20,
     kind: Option[String] = None,
     language: Option[String] = None,
-    asOfRev: Option[Rev] = None
+    asOfRev: Option[Rev] = None,
+    nameOnly: Boolean = false
   ): IO[Vector[GraphNode]] = {
     val liveFilter = asOfRev match {
       case Some(r) => s"AND n.created_rev <= ${r.value} AND (n.deleted_rev == null OR ${r.value} < n.deleted_rev)"
@@ -88,19 +89,39 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
     val kindFilter = kind.map(_ => "FILTER n2.kind == @kind").getOrElse("")
     val langFilter = language.map(_ => "FILTER CONTAINS(LOWER(TO_STRING(n2.provenance.source_uri)), LOWER(@language))").getOrElse("")
 
-    val aql =
+    val nameOnlyAql =
       s"""LET name_matches = (
          |  FOR n IN nodes
          |    FILTER CONTAINS(LOWER(n.name), LOWER(@text))
          |      $liveFilter
-         |    RETURN DISTINCT n.logical_id
+         |    LET w = (LOWER(n.name) == LOWER(@text) ? 100 : 60)
+         |    RETURN DISTINCT { id: n.logical_id, weight: w }
+         |)
+         |
+         |FOR entry IN name_matches
+         |  FOR n2 IN nodes
+         |    FILTER n2.logical_id == entry.id AND n2.deleted_rev == null
+         |    $kindFilter
+         |    $langFilter
+         |  LET symbol_priority = n2.kind IN ["function", "method", "class", "trait", "object", "interface"] ? 0 : 1
+         |  SORT entry.weight DESC, symbol_priority ASC, n2.name ASC
+         |  LIMIT @limit
+         |  RETURN MERGE(n2, { attrs: MERGE(n2.attrs, { _search_weight: entry.weight }) })""".stripMargin
+
+    val fullAql =
+      s"""LET name_matches = (
+         |  FOR n IN nodes
+         |    FILTER CONTAINS(LOWER(n.name), LOWER(@text))
+         |      $liveFilter
+         |    LET w = (LOWER(n.name) == LOWER(@text) ? 100 : 60)
+         |    RETURN DISTINCT { id: n.logical_id, weight: w }
          |)
          |
          |LET provenance_matches = (
          |  FOR n IN nodes
          |    FILTER CONTAINS(LOWER(n.provenance.source_uri), LOWER(@text))
          |      $liveFilter
-         |    RETURN DISTINCT n.logical_id
+         |    RETURN DISTINCT { id: n.logical_id, weight: 40 }
          |)
          |
          |LET claim_matches = (
@@ -110,7 +131,7 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
          |        OR CONTAINS(LOWER(TO_STRING(c.value)), LOWER(@text))
          |      )
          |      $claimLiveFilter
-         |    RETURN DISTINCT c.entity_id
+         |    RETURN DISTINCT { id: c.entity_id, weight: 20 }
          |)
          |
          |LET decision_matches = (
@@ -121,27 +142,35 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
          |        CONTAINS(LOWER(TO_STRING(n.attrs.title)), LOWER(@text))
          |        OR CONTAINS(LOWER(TO_STRING(n.attrs.rationale)), LOWER(@text))
          |      )
-         |    RETURN DISTINCT n.logical_id
+         |    RETURN DISTINCT { id: n.logical_id, weight: 20 }
          |)
          |
          |LET attr_matches = (
          |  FOR n IN nodes
          |    FILTER CONTAINS(LOWER(TO_STRING(n.attrs)), LOWER(@text))
          |      $liveFilter
-         |    RETURN DISTINCT n.logical_id
+         |    RETURN DISTINCT { id: n.logical_id, weight: 10 }
          |)
          |
-         |LET all_ids = UNION_DISTINCT(name_matches, provenance_matches, claim_matches, decision_matches, attr_matches)
+         |LET all_scored = UNION(name_matches, provenance_matches, claim_matches, decision_matches, attr_matches)
          |
-         |FOR id IN all_ids
+         |LET best_per_id = (
+         |  FOR s IN all_scored
+         |    COLLECT id = s.id AGGREGATE maxWeight = MAX(s.weight)
+         |    RETURN { id, weight: maxWeight }
+         |)
+         |
+         |FOR entry IN best_per_id
          |  FOR n2 IN nodes
-         |    FILTER n2.logical_id == id AND n2.deleted_rev == null
+         |    FILTER n2.logical_id == entry.id AND n2.deleted_rev == null
          |    $kindFilter
          |    $langFilter
          |  LET symbol_priority = n2.kind IN ["function", "method", "class", "trait", "object", "interface"] ? 0 : 1
-         |  SORT symbol_priority ASC, n2.name ASC
+         |  SORT entry.weight DESC, symbol_priority ASC, n2.name ASC
          |  LIMIT @limit
-         |  RETURN n2""".stripMargin
+         |  RETURN MERGE(n2, { attrs: MERGE(n2.attrs, { _search_weight: entry.weight }) })""".stripMargin
+
+    val aql = if (nameOnly) nameOnlyAql else fullAql
 
     val binds = scala.collection.mutable.Map[String, AnyRef](
       "text"  -> text.asInstanceOf[AnyRef],

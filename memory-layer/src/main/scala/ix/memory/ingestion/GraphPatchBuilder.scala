@@ -36,9 +36,12 @@ object GraphPatchBuilder {
                     else "unknown-parser/1.0"
 
     val nodeOps = parseResult.entities.map { e =>
+      val baseAttrs = e.attrs +
+        ("line_start" -> Json.fromInt(e.lineStart)) +
+        ("line_end"   -> Json.fromInt(e.lineEnd))
       val attrsWithFp = e.contentFingerprint match {
-        case Some(fp) => e.attrs + ("content_fingerprint" -> Json.fromString(fp))
-        case None     => e.attrs
+        case Some(fp) => baseAttrs + ("content_fingerprint" -> Json.fromString(fp))
+        case None     => baseAttrs
       }
       PatchOp.UpsertNode(nodeIdFor(e.name), e.kind, e.name, attrsWithFp)
     }
