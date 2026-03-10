@@ -371,6 +371,118 @@ class TypeScriptParserSpec extends AnyFlatSpec with Matchers {
     ) shouldBe true
   }
 
+  it should "extract CALLS through functions with object-type parameters" in {
+    // This is the exact pattern that broke pickBest extraction in resolve.ts:
+    // the { kind?: string; path?: string } type annotation was confusing
+    // findBraceBlockEnd because braces in the type balanced on the same line.
+    val source = """
+      |export async function resolveEntityFull(
+      |  client: IxClient,
+      |  symbol: string,
+      |  preferredKinds: string[],
+      |  opts?: { kind?: string; path?: string }
+      |): Promise<ResolveResult> {
+      |  const exactName = nodes.filter((n: any) => n.name === symbol);
+      |  const winner = pickBest(exactName, symbol, preferredKinds, opts);
+      |  if (winner) return winner;
+      |  return { resolved: false, ambiguous: false };
+      |}
+      |
+      |function pickBest(
+      |  candidates: any[],
+      |  symbol: string,
+      |  preferredKinds: string[],
+      |  opts?: { kind?: string; path?: string }
+      |): ResolveResult | null {
+      |  const scored = candidates.map(n => ({
+      |    node: n,
+      |    score: scoreCandidate(n, symbol, opts),
+      |  }));
+      |  scored.sort((a, b) => a.score - b.score);
+      |  return scored.length > 0 ? scored[0] : null;
+      |}
+    """.stripMargin
+    val result = parser.parse("resolve.ts", source)
+
+    // resolveEntityFull should call pickBest
+    result.relationships.exists(r =>
+      r.srcName == "resolveEntityFull" && r.dstName == "pickBest" && r.predicate == "CALLS"
+    ) shouldBe true
+
+    // pickBest should call scoreCandidate (not map/sort which are builtins)
+    result.relationships.exists(r =>
+      r.srcName == "pickBest" && r.dstName == "scoreCandidate" && r.predicate == "CALLS"
+    ) shouldBe true
+
+    // Array builtins should NOT appear as CALLS targets
+    result.relationships.exists(r =>
+      r.predicate == "CALLS" && r.dstName == "map"
+    ) shouldBe false
+    result.relationships.exists(r =>
+      r.predicate == "CALLS" && r.dstName == "sort"
+    ) shouldBe false
+  }
+
+  it should "handle braces in function return types" in {
+    val source = """
+      |function getData(): { name: string; age: number } {
+      |  return processResult();
+      |}
+    """.stripMargin
+    val result = parser.parse("data.ts", source)
+    result.relationships.exists(r =>
+      r.srcName == "getData" && r.dstName == "processResult" && r.predicate == "CALLS"
+    ) shouldBe true
+  }
+
+  it should "handle class method calls and this.method patterns" in {
+    val source = """
+      |class Service {
+      |  async process(input: string) {
+      |    const data = this.validate(input);
+      |    return transform(data);
+      |  }
+      |
+      |  private validate(s: string) {
+      |    return check(s);
+      |  }
+      |}
+    """.stripMargin
+    val result = parser.parse("service.ts", source)
+    // process should call transform (bare function call)
+    result.relationships.exists(r =>
+      r.srcName == "process" && r.dstName == "transform" && r.predicate == "CALLS"
+    ) shouldBe true
+    // validate should call check
+    result.relationships.exists(r =>
+      r.srcName == "validate" && r.dstName == "check" && r.predicate == "CALLS"
+    ) shouldBe true
+  }
+
+  it should "not extract builtins like filter, map, forEach as CALLS" in {
+    val source = """
+      |function processItems(items: Item[]) {
+      |  const filtered = items.filter(i => i.active);
+      |  const mapped = filtered.map(i => i.name);
+      |  mapped.forEach(n => console.log(n));
+      |  const found = items.find(i => i.id === "x");
+      |  items.reduce((acc, i) => acc + i.value, 0);
+      |  const joined = mapped.join(", ");
+      |  return realHelper(found);
+      |}
+    """.stripMargin
+    val result = parser.parse("process.ts", source)
+    val calls = result.relationships.filter(r => r.predicate == "CALLS" && r.srcName == "processItems")
+    // Should only have realHelper
+    calls.map(_.dstName) should contain("realHelper")
+    calls.map(_.dstName) should not contain "filter"
+    calls.map(_.dstName) should not contain "map"
+    calls.map(_.dstName) should not contain "forEach"
+    calls.map(_.dstName) should not contain "find"
+    calls.map(_.dstName) should not contain "reduce"
+    calls.map(_.dstName) should not contain "join"
+  }
+
   it should "compute method spans bounded within their class" in {
     val source = """export class Api {
       |  fetch(url: string) {

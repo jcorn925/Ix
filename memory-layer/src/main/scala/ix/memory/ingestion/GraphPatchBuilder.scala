@@ -26,7 +26,7 @@ object GraphPatchBuilder {
       NodeId(UUID.nameUUIDFromBytes(s"$filePath:$name".getBytes("UTF-8")))
 
     def edgeIdFor(src: String, dst: String, predicate: String): EdgeId =
-      EdgeId(UUID.nameUUIDFromBytes(s"$src:$dst:$predicate".getBytes("UTF-8")))
+      EdgeId(UUID.nameUUIDFromBytes(s"$filePath:$src:$dst:$predicate".getBytes("UTF-8")))
 
     val extractor = if (filePath.endsWith(".py")) "tree-sitter-python/1.0"
                     else if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) "typescript-parser/1.0"

@@ -75,6 +75,80 @@ class GraphPatchBuilderSpec extends AnyFlatSpec with Matchers {
     claims.map(_.field) should not contain "line_end"
   }
 
+  it should "generate distinct edge IDs for same-name CALLS in different files" in {
+    val rel = ParsedRelationship("main", "helper", "CALLS")
+    val pr = ParseResult(
+      entities = Vector(
+        mkEntity("main", NodeKind.Function, 1, 10),
+        mkEntity("helper", NodeKind.Function, 12, 20)
+      ),
+      relationships = Vector(rel)
+    )
+
+    val patchA = GraphPatchBuilder.build("src/a.ts", None, pr)
+    val patchB = GraphPatchBuilder.build("src/b.ts", None, pr)
+
+    val edgeA = patchA.ops.collect { case op: PatchOp.UpsertEdge => op }.head
+    val edgeB = patchB.ops.collect { case op: PatchOp.UpsertEdge => op }.head
+
+    edgeA.id should not be edgeB.id
+  }
+
+  it should "generate distinct node IDs for same-name entities in different files" in {
+    val pr = ParseResult(
+      entities = Vector(mkEntity("main", NodeKind.Function, 1, 10)),
+      relationships = Vector.empty
+    )
+
+    val patchA = GraphPatchBuilder.build("src/a.ts", None, pr)
+    val patchB = GraphPatchBuilder.build("src/b.ts", None, pr)
+
+    val nodeA = patchA.ops.collect { case op: PatchOp.UpsertNode => op }.head
+    val nodeB = patchB.ops.collect { case op: PatchOp.UpsertNode => op }.head
+
+    nodeA.id should not be nodeB.id
+  }
+
+  it should "produce CALLS edges with matching src/dst node IDs for TS functions" in {
+    // End-to-end: parser → GraphPatchBuilder produces edges whose
+    // src/dst match the node IDs created for the same functions.
+    val parser = new ix.memory.ingestion.parsers.TypeScriptParser()
+    val source = """
+      |export async function resolveEntityFull(
+      |  client: any,
+      |  symbol: string,
+      |  opts?: { kind?: string; path?: string }
+      |): Promise<any> {
+      |  const winner = pickBest(candidates, symbol);
+      |  return winner;
+      |}
+      |
+      |function pickBest(candidates: any[], symbol: string) {
+      |  return candidates[0];
+      |}
+    """.stripMargin
+
+    val parseResult = parser.parse("resolve.ts", source)
+    val filePath = "/project/ix-cli/src/cli/resolve.ts"
+    val patch = GraphPatchBuilder.build(filePath, Some("hash"), parseResult)
+
+    val nodes = patch.ops.collect { case op: PatchOp.UpsertNode => op }
+    val edges = patch.ops.collect { case op: PatchOp.UpsertEdge => op }
+
+    // Find the CALLS edge
+    val callsEdges = edges.filter(_.predicate == EdgePredicate("CALLS"))
+    callsEdges should not be empty
+
+    val resolveToPickBest = callsEdges.find(e => {
+      val srcNode = nodes.find(_.id == NodeId(e.src.value))
+      val dstNode = nodes.find(_.id == NodeId(e.dst.value))
+      srcNode.exists(_.name == "resolveEntityFull") &&
+      dstNode.exists(_.name == "pickBest")
+    })
+
+    resolveToPickBest shouldBe defined
+  }
+
   it should "preserve existing attrs alongside line spans" in {
     val parseResult = ParseResult(
       entities = Vector(

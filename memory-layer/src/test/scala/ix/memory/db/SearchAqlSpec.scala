@@ -34,4 +34,18 @@ class SearchAqlSpec extends AnyFlatSpec with Matchers {
     sourceFile should include ("weight: 20")
     sourceFile should include ("weight: 10")
   }
+
+  it should "gate attr_matches on minimum term length to avoid short-term noise" in {
+    // The code should check text.length >= 6 before including attr_matches
+    sourceFile should include ("text.length >= 6")
+    sourceFile should include ("LET attr_matches = []")
+  }
+
+  it should "include filePath in edge ID generation for cross-file uniqueness" in {
+    // Read the GraphPatchBuilder source to verify edge IDs include filePath
+    val gpbSource = scala.io.Source.fromFile(
+      "memory-layer/src/main/scala/ix/memory/ingestion/GraphPatchBuilder.scala"
+    ).mkString
+    gpbSource should include ("$filePath:$src:$dst:$predicate")
+  }
 }

@@ -293,17 +293,26 @@ class TypeScriptParser extends Parser {
 
   /**
    * Find end of a brace-delimited block starting near `startIdx`.
+   *
+   * Uses end-of-line brace depth to detect block entry. This correctly
+   * skips inline TypeScript type annotations like `{ kind?: string }`
+   * that balance to zero on a single line, which would otherwise cause
+   * the parser to think the function body ended on the parameter line.
    */
   private def findBraceBlockEnd(lines: Array[String], startIdx: Int): Int = {
     var braceCount = 0
-    var foundOpen = false
+    var entered = false
     var i = startIdx
     while (i < lines.length) {
       for (ch <- lines(i)) {
-        if (ch == '{') { braceCount += 1; foundOpen = true }
+        if (ch == '{') braceCount += 1
         if (ch == '}') braceCount -= 1
       }
-      if (foundOpen && braceCount <= 0) return i + 1
+      // Only mark as entered when braceCount > 0 at end of line.
+      // This skips inline type annotations like { a: string; b: number }
+      // that balance to 0 within the same line.
+      if (!entered && braceCount > 0) entered = true
+      if (entered && braceCount <= 0) return i + 1
       i += 1
     }
     lines.length
@@ -354,6 +363,18 @@ class TypeScriptParser extends Parser {
     "WeakMap", "WeakSet", "Symbol",
     "setTimeout", "setInterval", "clearTimeout", "clearInterval",
     "require", "module", "exports",
-    "fetch", "Response", "Request", "URL", "Buffer", "process"
+    "fetch", "Response", "Request", "URL", "Buffer", "process",
+    // Array/iterable methods
+    "map", "filter", "reduce", "forEach", "sort", "find", "some", "every",
+    "includes", "indexOf", "slice", "splice", "push", "pop", "shift", "unshift",
+    "concat", "join", "flat", "flatMap", "fill", "from",
+    // String methods
+    "split", "replace", "trim", "toUpperCase", "toLowerCase", "substring",
+    "charAt", "startsWith", "endsWith", "padStart", "padEnd", "match", "test",
+    // Object methods
+    "keys", "values", "entries", "assign", "create", "freeze",
+    "defineProperty", "getOwnPropertyNames", "hasOwnProperty",
+    // Promise methods
+    "then", "catch", "finally", "all", "race", "resolve", "reject"
   )
 }

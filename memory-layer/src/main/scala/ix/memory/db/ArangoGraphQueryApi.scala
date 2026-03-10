@@ -108,6 +108,18 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
          |  LIMIT @limit
          |  RETURN MERGE(n2, { attrs: MERGE(n2.attrs, { _search_weight: entry.weight }) })""".stripMargin
 
+    // Gate attr_matches on term length to avoid noise from short/common terms
+    val attrMatchAql = if (text.length >= 6) {
+      s"""LET attr_matches = (
+         |  FOR n IN nodes
+         |    FILTER CONTAINS(LOWER(TO_STRING(n.attrs)), LOWER(@text))
+         |      $liveFilter
+         |    RETURN DISTINCT { id: n.logical_id, weight: 10 }
+         |)""".stripMargin
+    } else {
+      "LET attr_matches = []"
+    }
+
     val fullAql =
       s"""LET name_matches = (
          |  FOR n IN nodes
@@ -145,12 +157,7 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
          |    RETURN DISTINCT { id: n.logical_id, weight: 20 }
          |)
          |
-         |LET attr_matches = (
-         |  FOR n IN nodes
-         |    FILTER CONTAINS(LOWER(TO_STRING(n.attrs)), LOWER(@text))
-         |      $liveFilter
-         |    RETURN DISTINCT { id: n.logical_id, weight: 10 }
-         |)
+         |$attrMatchAql
          |
          |LET all_scored = UNION(name_matches, provenance_matches, claim_matches, decision_matches, attr_matches)
          |
