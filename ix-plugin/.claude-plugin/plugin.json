@@ -1,0 +1,9 @@
+{
+  "name": "ix-memory",
+  "version": "1.0.0",
+  "description": "Ix Memory integration — auto-ingests edited files and front-runs Grep/Glob/Read with graph-aware ix searches for token-efficient codebase understanding.",
+  "author": {
+    "name": "Ix Memory"
+  },
+  "hooks": "./hooks/hooks.json"
+}
