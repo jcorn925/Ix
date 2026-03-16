@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
-# IX-Memory — Setup
+# Ix — Setup
 #
 # Starts the IX backend (ArangoDB + Memory Layer) and builds the CLI.
-# This runs from the IX-Memory repo — it does NOT touch your projects.
+# This runs from the Ix repo — it does NOT touch your projects.
 #
 # To connect a project, run: ./scripts/connect.sh ~/my-project
 #
@@ -40,10 +40,16 @@ ensure_local_bin_on_path() {
     fi
     if ! grep -Fq "$path_line" "$rc"; then
       echo "" >> "$rc"
-      echo "# Added by IX-Memory setup" >> "$rc"
+      echo "# Added by Ix setup" >> "$rc"
       echo "$path_line" >> "$rc"
     fi
   done
+}
+
+install_claude_hooks() {
+  # Delegate to the standalone installer — keeps curl and repo installs in sync.
+  # Hooks are copied to ~/.local/share/ix/plugin/hooks (not repo-relative).
+  bash "$IX_DIR/ix-plugin/install.sh"
 }
 
 install_global_ix() {
@@ -69,7 +75,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       echo "Usage: ./setup.sh [OPTIONS]"
       echo ""
-      echo "Starts the IX-Memory backend, builds the CLI, and installs an 'ix' command."
+      echo "Starts the Ix backend, builds the CLI, and installs an 'ix' command."
       echo ""
       echo "Options:"
       echo "  --skip-backend   Skip backend startup (if already running)"
@@ -97,8 +103,39 @@ done
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║       IX-Memory — Setup                  ║"
+echo "║       Ix — Setup                  ║"
 echo "╚══════════════════════════════════════════╝"
+echo ""
+
+# ── Step 0: System dependencies ──────────────────────────────────────────────
+
+echo "── [0] Checking dependencies ──────────────────────"
+
+MISSING_DEPS=()
+for dep in docker node jq rg; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    MISSING_DEPS+=("$dep")
+  fi
+done
+
+if [ "${#MISSING_DEPS[@]}" -gt 0 ]; then
+  echo "  Missing required tools: ${MISSING_DEPS[*]}"
+  echo ""
+  echo "  Install hints:"
+  for dep in "${MISSING_DEPS[@]}"; do
+    case "$dep" in
+      docker) echo "    docker:  https://docs.docker.com/get-docker/" ;;
+      node)   echo "    node:    https://nodejs.org (v18+ required)" ;;
+      jq)     echo "    jq:      sudo apt install jq  /  brew install jq" ;;
+      rg)     echo "    rg:      sudo apt install ripgrep  /  brew install ripgrep" ;;
+    esac
+  done
+  echo ""
+  echo "  Re-run setup.sh after installing missing tools."
+  exit 1
+fi
+echo "  [ok] docker, node, jq, rg"
+
 echo ""
 
 # ── Step 1: Backend ──────────────────────────────────────────────────────────
@@ -131,6 +168,16 @@ else
   echo "  [ok] Installed: ~/.local/bin/ix"
 fi
 
+# ── Step 4: Claude Code Plugin ───────────────────────────────────────────────
+
+echo ""
+echo "── [4] Claude Code plugin ─────────────────────────"
+if command -v claude >/dev/null 2>&1; then
+  install_claude_hooks
+else
+  echo "  (skipped — claude CLI not found)"
+fi
+
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -143,6 +190,8 @@ echo "  ArangoDB: http://localhost:8529"
 echo ""
 echo "  CLI:      ix status"
 echo "            (open a new shell, or run: export PATH=\"\$HOME/.local/bin:\$PATH\")"
+echo ""
+echo "  Plugin:   restart Claude Code to activate the Ix hooks"
 echo ""
 echo "  Next: connect a project to IX:"
 echo "    ./scripts/connect.sh ~/my-project"
