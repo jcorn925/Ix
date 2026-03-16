@@ -275,7 +275,21 @@ if [ ! -x "$IX_BIN/ix" ] || [ "$("$IX_BIN/ix" --version 2>/dev/null || echo "")"
   mkdir -p "$INSTALL_DIR" "$IX_BIN"
 
   echo "  Downloading ix CLI v${VERSION} for ${PLATFORM}..."
-  if ! gcurl "$TARBALL_URL" -o "/tmp/${TARBALL_NAME}" 2>/dev/null; then
+  DOWNLOAD_OK=false
+  # Try gh CLI first (handles private repos automatically)
+  if command -v gh >/dev/null 2>&1; then
+    if gh release download "v${VERSION}" --repo "${GITHUB_ORG}/${GITHUB_REPO}" \
+         --pattern "${TARBALL_NAME}" --dir /tmp 2>/dev/null; then
+      DOWNLOAD_OK=true
+    fi
+  fi
+  # Fallback to curl
+  if [ "$DOWNLOAD_OK" = false ]; then
+    if gcurl "$TARBALL_URL" -o "/tmp/${TARBALL_NAME}" 2>/dev/null; then
+      DOWNLOAD_OK=true
+    fi
+  fi
+  if [ "$DOWNLOAD_OK" = false ]; then
     echo ""
     warn "Could not download pre-built CLI from:"
     warn "  $TARBALL_URL"
