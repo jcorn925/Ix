@@ -34,6 +34,7 @@ object Routes {
     val decideRoutes        = new DecideRoutes(writeApi).routes
     val searchRoutes        = new SearchRoutes(queryApi).routes
     val truthRoutes         = new TruthRoutes(writeApi, queryApi).routes
+    val goalRoutes          = new GoalRoutes(writeApi, queryApi).routes
     val patchRoutes         = new PatchRoutes(client).routes
     val decisionListRoutes  = new DecisionRoutes(queryApi).routes
     val expandRoutes        = new ExpandRoutes(queryApi).routes
@@ -44,6 +45,6 @@ object Routes {
     health <+> contextRoutes <+> entityRoutes <+>
       diffRoutes <+> conflictRoutes <+> decideRoutes <+> searchRoutes <+>
       truthRoutes <+> patchRoutes <+> decisionListRoutes <+> expandRoutes <+>
-      statsRoutes <+> patchCommitRoutes <+> listRoutes
+      statsRoutes <+> patchCommitRoutes <+> listRoutes <+> goalRoutes
   }
 }

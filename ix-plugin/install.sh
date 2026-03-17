@@ -2,9 +2,9 @@
 # ix-plugin/install.sh — Standalone Claude Code plugin installer for Ix Memory
 #
 # Usage (curl):
-#   curl -fsSL https://raw.githubusercontent.com/ix-infrastructure/IX-Memory/main/ix-plugin/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ix-infrastructure/Ix/main/ix-plugin/install.sh | bash
 #
-# Usage (local, from the IX-Memory repo):
+# Usage (local, from the Ix repo):
 #   bash ix-plugin/install.sh
 #
 # What it does:
@@ -17,9 +17,28 @@ set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-GITHUB_RAW="https://raw.githubusercontent.com/ix-infrastructure/IX-Memory/main/ix-plugin/hooks"
+GITHUB_RAW="https://raw.githubusercontent.com/ix-infrastructure/Ix/main/ix-plugin/hooks"
 INSTALL_DIR="${IX_PLUGIN_DIR:-$HOME/.local/share/ix/plugin/hooks}"
 SETTINGS="$HOME/.claude/settings.json"
+
+# Auth for private repo access
+AUTH_HEADER=""
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  AUTH_HEADER="Authorization: token ${GITHUB_TOKEN}"
+elif command -v gh >/dev/null 2>&1; then
+  GH_TOKEN=$(gh auth token 2>/dev/null || true)
+  if [ -n "$GH_TOKEN" ]; then
+    AUTH_HEADER="Authorization: token ${GH_TOKEN}"
+  fi
+fi
+
+gcurl() {
+  if [ -n "$AUTH_HEADER" ]; then
+    curl -fsSL -H "$AUTH_HEADER" "$@"
+  else
+    curl -fsSL "$@"
+  fi
+}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,7 +62,7 @@ info "curl, jq"
 
 if ! command -v ix >/dev/null 2>&1; then
   warn "'ix' not found in PATH — hooks will be installed but won't activate until ix is installed."
-  warn "Install ix first: see https://github.com/ix-infrastructure/IX-Memory"
+  warn "Install ix first: see https://github.com/ix-infrastructure/Ix"
 fi
 
 # ── Download hooks ────────────────────────────────────────────────────────────
@@ -70,8 +89,8 @@ if [ -n "$_repo_hooks" ]; then
   info "Copied hooks from local repo → $INSTALL_DIR"
 else
   # Remote install — download from GitHub
-  curl -fsSL "$GITHUB_RAW/ix-intercept.sh" -o "$INSTALL_DIR/ix-intercept.sh"
-  curl -fsSL "$GITHUB_RAW/ix-ingest.sh"    -o "$INSTALL_DIR/ix-ingest.sh"
+  gcurl "$GITHUB_RAW/ix-intercept.sh" -o "$INSTALL_DIR/ix-intercept.sh"
+  gcurl "$GITHUB_RAW/ix-ingest.sh"    -o "$INSTALL_DIR/ix-ingest.sh"
   info "Downloaded hooks → $INSTALL_DIR"
 fi
 
@@ -126,5 +145,5 @@ echo ""
 echo "  Restart Claude Code to activate."
 echo ""
 echo "  To uninstall:"
-echo "    curl -fsSL https://raw.githubusercontent.com/ix-infrastructure/IX-Memory/main/ix-plugin/uninstall.sh | bash"
+echo "    curl -fsSL https://raw.githubusercontent.com/ix-infrastructure/Ix/main/ix-plugin/uninstall.sh | bash"
 echo ""
