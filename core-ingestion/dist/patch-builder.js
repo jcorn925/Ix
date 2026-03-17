@@ -31,10 +31,10 @@ function sourceType(filePath) {
     return 'code';
 }
 export function extractorName() {
-    return `tree-sitter/1.11`;
+    return `tree-sitter/1.12`;
 }
 /** Previous extractor versions — their patches are superseded when re-ingesting. */
-export const PREVIOUS_EXTRACTORS = ['tree-sitter/1.10', 'tree-sitter/1.9', 'tree-sitter/1.8', 'tree-sitter/1.7', 'tree-sitter/1.6', 'tree-sitter/1.5', 'tree-sitter/1.4', 'tree-sitter/1.3', 'tree-sitter/1.2', 'tree-sitter/1.1'];
+export const PREVIOUS_EXTRACTORS = ['tree-sitter/1.11', 'tree-sitter/1.10', 'tree-sitter/1.9', 'tree-sitter/1.8', 'tree-sitter/1.7', 'tree-sitter/1.6', 'tree-sitter/1.5', 'tree-sitter/1.4', 'tree-sitter/1.3', 'tree-sitter/1.2', 'tree-sitter/1.1'];
 /** Compute a patchId for a (filePath, sourceHash, extractorVersion) triple. */
 function computePatchId(filePath, sourceHash, extractor) {
     return deterministicId(`${filePath}:${sourceHash}:${extractor}`);
