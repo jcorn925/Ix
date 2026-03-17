@@ -30,28 +30,42 @@ export interface ResolvedCallEdge {
     calleeQualifiedKey: string;
     confidence: number;
 }
+/** Generalised form of ResolvedCallEdge that covers any cross-file edge predicate. */
+export interface ResolvedEdge {
+    srcFilePath: string;
+    srcName: string;
+    dstFilePath: string;
+    dstName: string;
+    dstQualifiedKey: string;
+    predicate: string;
+    confidence: number;
+}
 /**
- * Resolves CALLS relationships to their cross-file targets by building a
- * symbol table and import map over the full batch of parsed files.
+ * Resolves CALLS and EXTENDS relationships to their cross-file targets by
+ * building a symbol table and import map over the full batch of parsed files.
  *
  * Tiers (in priority order):
- *   0.9 — import-scoped: callee is in a file the caller explicitly imports
- *   0.5 — global fallback: callee exists in exactly one other file (unambiguous)
+ *   0.9 — import-scoped: dst is in a file the src explicitly imports
+ *   0.8 — transitive import-scoped: one re-export hop away
+ *   0.5 — global fallback: dst exists in exactly one other file (unambiguous)
  *
- * Same-file calls (tier 0.95) are already handled correctly by buildPatch and
- * are not emitted here.
+ * Same-file edges are already handled correctly by buildPatch and are not
+ * emitted here.
  *
  * Import resolution handles:
  *   - Stem-based:      './payments'     → 'payments.ts'
  *   - Path-aliased:    '@/lib/payments' → 'payments.ts'  (last segment)
  *   - Directory index: './services'     → 'services/index.ts'
  *   - Bare aliases:    '@components'    → 'components.ts' (strip leading non-word chars)
- *                      '~lib'           → 'lib.ts'
- *   - External bare:   'react'          → unresolved (no match in batch)
+ *   - Dotted paths:    'ix.memory.model.Edge' → stem 'Edge' → 'Edge.scala'
+ *                      (handles Scala/Java package imports where tree-sitter
+ *                       emits each identifier separately)
  *
  * Qualified-key resolution:
- *   - Module-level function: calleeQualifiedKey === calleeName
- *   - Unambiguous class method: calleeQualifiedKey === 'ClassName.method'
- *   - Ambiguous (two classes define same method name): edge not emitted
+ *   - Module-level function/class: dstQualifiedKey === dstName
+ *   - Unambiguous class method: dstQualifiedKey === 'ClassName.method'
+ *   - Ambiguous (two entities share the same plain name): edge not emitted
  */
+export declare function resolveEdges(results: FileParseResult[]): ResolvedEdge[];
+/** @deprecated Use resolveEdges instead. */
 export declare function resolveCallEdges(results: FileParseResult[]): ResolvedCallEdge[];

@@ -31,7 +31,17 @@ function sourceType(filePath) {
     return 'code';
 }
 function extractorName() {
-    return `tree-sitter/1.0`;
+    return `tree-sitter/1.7`;
+}
+/** Previous extractor versions — their patches are superseded when re-ingesting. */
+const PREVIOUS_EXTRACTORS = ['tree-sitter/1.6', 'tree-sitter/1.5', 'tree-sitter/1.4', 'tree-sitter/1.3', 'tree-sitter/1.2', 'tree-sitter/1.1'];
+/** Compute a patchId for a (filePath, sourceHash, extractorVersion) triple. */
+function computePatchId(filePath, sourceHash, extractor) {
+    return deterministicId(`${filePath}:${sourceHash}:${extractor}`);
+}
+/** Compute the legacy patchId (pre-1.1 scheme, no extractor suffix). */
+function legacyPatchId(filePath, sourceHash) {
+    return deterministicId(`${filePath}:${sourceHash}`);
 }
 // ---------------------------------------------------------------------------
 // Build a GraphPatchPayload from a FileParseResult
@@ -117,12 +127,16 @@ export function buildPatch(result, sourceHash, previousSourceHash) {
             confidence: null,
         });
     }
-    // patchId is deterministic: same file + same content → same id across runs.
-    // This makes repeated ingestion idempotent at the patch level.
-    const patchId = deterministicId(`${filePath}:${sourceHash}`);
+    // patchId is deterministic: same file + same content + same extractor → same id.
+    const extractor = extractorName();
+    const patchId = computePatchId(filePath, sourceHash, extractor);
+    // When re-ingesting with new extractor version, replace the old patch so the
+    // server accepts the new ops rather than deduplicating on the old patchId.
     const previousPatchId = previousSourceHash
-        ? deterministicId(`${filePath}:${previousSourceHash}`)
-        : undefined;
+        ? computePatchId(filePath, previousSourceHash, extractor)
+        : legacyPatchId(filePath, sourceHash);
+    // Also supersede any patches created by previous extractor versions for the same file+content.
+    const replaces = [previousPatchId, ...PREVIOUS_EXTRACTORS.map(prev => computePatchId(filePath, sourceHash, prev))];
     return {
         patchId,
         actor: 'ix/ingestion',
@@ -130,12 +144,12 @@ export function buildPatch(result, sourceHash, previousSourceHash) {
         source: {
             uri: filePath,
             sourceHash,
-            extractor: extractorName(),
+            extractor,
             sourceType: sourceType(filePath),
         },
         baseRev: 0,
         ops,
-        replaces: previousPatchId ? [previousPatchId] : [],
+        replaces,
         intent: `Parsed ${nodePath.basename(filePath)}`,
     };
 }
@@ -144,13 +158,13 @@ export function buildPatch(result, sourceHash, previousSourceHash) {
 // to the actual defining file for cross-file calls resolved by resolveCallEdges.
 // ---------------------------------------------------------------------------
 export function buildPatchWithResolution(result, sourceHash, resolvedEdges, previousSourceHash) {
-    // Build lookup: calleeName → { calleeFilePath, calleeQualifiedKey }
-    const callResolution = new Map();
+    // Build lookup: `${predicate}:${dstName}` → { dstFilePath, dstQualifiedKey }
+    const edgeResolution = new Map();
     for (const edge of resolvedEdges) {
-        if (edge.callerFilePath === result.filePath) {
-            callResolution.set(edge.calleeName, {
-                calleeFilePath: edge.calleeFilePath,
-                calleeQualifiedKey: edge.calleeQualifiedKey,
+        if (edge.srcFilePath === result.filePath) {
+            edgeResolution.set(`${edge.predicate}:${edge.dstName}`, {
+                dstFilePath: edge.dstFilePath,
+                dstQualifiedKey: edge.dstQualifiedKey,
             });
         }
     }
@@ -197,11 +211,12 @@ export function buildPatchWithResolution(result, sourceHash, resolvedEdges, prev
         const dstKey = r.predicate === 'CONTAINS'
             ? resolveKey(r.dstName, r.srcName)
             : resolveKey(r.dstName);
-        // For CALLS edges with a cross-file resolution, use the callee file's nodeId
+        // For cross-file resolved edges (CALLS, EXTENDS), use the defining file's nodeId
         let dstNodeId;
-        if (r.predicate === 'CALLS' && callResolution.has(r.dstName)) {
-            const { calleeFilePath, calleeQualifiedKey } = callResolution.get(r.dstName);
-            dstNodeId = nodeId(calleeFilePath, calleeQualifiedKey);
+        const resolutionKey = `${r.predicate}:${r.dstName}`;
+        if (edgeResolution.has(resolutionKey)) {
+            const { dstFilePath, dstQualifiedKey } = edgeResolution.get(resolutionKey);
+            dstNodeId = nodeId(dstFilePath, dstQualifiedKey);
         }
         else {
             dstNodeId = nodeId(filePath, dstKey);
@@ -225,10 +240,12 @@ export function buildPatchWithResolution(result, sourceHash, resolvedEdges, prev
             confidence: null,
         });
     }
-    const patchId = deterministicId(`${filePath}:${sourceHash}`);
+    const extractor = extractorName();
+    const patchId = computePatchId(filePath, sourceHash, extractor);
     const previousPatchId = previousSourceHash
-        ? deterministicId(`${filePath}:${previousSourceHash}`)
-        : undefined;
+        ? computePatchId(filePath, previousSourceHash, extractor)
+        : legacyPatchId(filePath, sourceHash);
+    const replaces = [previousPatchId, ...PREVIOUS_EXTRACTORS.map(prev => computePatchId(filePath, sourceHash, prev))];
     return {
         patchId,
         actor: 'ix/ingestion',
@@ -236,12 +253,12 @@ export function buildPatchWithResolution(result, sourceHash, resolvedEdges, prev
         source: {
             uri: filePath,
             sourceHash,
-            extractor: extractorName(),
+            extractor,
             sourceType: sourceType(filePath),
         },
         baseRev: 0,
         ops,
-        replaces: previousPatchId ? [previousPatchId] : [],
+        replaces,
         intent: `Parsed ${nodePath.basename(filePath)}`,
     };
 }

@@ -69,6 +69,33 @@ const DEFINITION_KIND_MAP = {
     'definition.annotation': 'class',
     'definition.constructor': 'method',
 };
+// Primitive / built-in types to exclude from REFERENCES edges
+const TYPE_BUILTINS = new Set([
+    // TypeScript / JavaScript
+    'string', 'number', 'boolean', 'void', 'null', 'undefined', 'any', 'never',
+    'unknown', 'object', 'bigint', 'symbol',
+    // Java / Kotlin / Scala
+    'String', 'Integer', 'Long', 'Double', 'Float', 'Boolean', 'Byte', 'Short',
+    'Character', 'Object', 'Void', 'Int', 'Unit', 'Any', 'AnyVal', 'AnyRef',
+    'Nothing', 'Null', 'Char', 'Number',
+    // C#
+    'decimal',
+    // Python
+    'int', 'str', 'float', 'bool', 'bytes', 'Optional', 'Union', 'List', 'Dict',
+    'Set', 'Tuple', 'Type',
+    // Rust
+    'i8', 'i16', 'i32', 'i64', 'i128', 'u8', 'u16', 'u32', 'u64', 'u128',
+    'f32', 'f64', 'usize', 'isize',
+    // Go
+    'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64',
+    'float32', 'float64', 'byte', 'rune', 'error',
+    // Common stdlib collections / wrappers
+    'Array', 'Map', 'Seq', 'Vector', 'Option', 'Future', 'Promise', 'Result',
+    'Either', 'Try', 'IO', 'Observable', 'Iterator', 'Iterable',
+    // C / C++
+    'size_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'int8_t',
+    'int16_t', 'int32_t', 'int64_t',
+]);
 // Builtins to exclude from CALLS edges
 const BUILTINS = new Set([
     'print', 'println', 'len', 'range', 'int', 'str', 'float', 'list', 'dict',
@@ -132,6 +159,8 @@ export function parseFile(filePath, source) {
         const classRanges = [];
         // Track seen calls per enclosing scope to avoid duplicate CALLS edges
         const seenCalls = new Map();
+        // Track seen type references per enclosing class/file to avoid duplicate REFERENCES edges
+        const seenRefs = new Map();
         // --- First pass: collect definitions ---
         for (const match of matches) {
             // Definition captures: name + definition.*
@@ -191,7 +220,38 @@ export function parseFile(filePath, source) {
         }
         // --- Second pass: calls and imports ---
         for (const match of matches) {
-            // Import captures
+            // Full import statement captures (Scala: reconstructs dotted package paths)
+            const importStmt = match.captures.find((c) => c.name === 'import.stmt');
+            if (importStmt) {
+                const raw = importStmt.node.text.replace(/^import\s+/, '').trim();
+                const line = importStmt.node.startPosition.row + 1;
+                if (raw.endsWith('._')) {
+                    // Wildcard: "ix.memory.model._" → package path "ix.memory.model"
+                    const pkgPath = raw.slice(0, -2);
+                    entities.push({ name: pkgPath, kind: 'module', lineStart: line, lineEnd: line, language });
+                    relationships.push({ srcName: fileName, dstName: pkgPath, predicate: 'IMPORTS' });
+                }
+                else {
+                    const braceIdx = raw.lastIndexOf('.{');
+                    if (braceIdx !== -1) {
+                        // Selective: "ix.memory.model.{NodeKind, GraphNode}"
+                        const prefix = raw.slice(0, braceIdx);
+                        const names = raw.slice(braceIdx + 2, -1).split(',').map((s) => s.trim()).filter(Boolean);
+                        for (const name of names) {
+                            const dstName = `${prefix}.${name}`;
+                            entities.push({ name: dstName, kind: 'module', lineStart: line, lineEnd: line, language });
+                            relationships.push({ srcName: fileName, dstName, predicate: 'IMPORTS' });
+                        }
+                    }
+                    else {
+                        // Simple: "ix.memory.model.NodeKind"
+                        entities.push({ name: raw, kind: 'module', lineStart: line, lineEnd: line, language });
+                        relationships.push({ srcName: fileName, dstName: raw, predicate: 'IMPORTS' });
+                    }
+                }
+                continue;
+            }
+            // Import captures (JS/TS/Python path-based)
             const importSource = match.captures.find((c) => c.name === 'import.source');
             if (importSource) {
                 let importPath = importSource.node.text
@@ -223,16 +283,46 @@ export function parseFile(filePath, source) {
                 const callee = callName.node.text;
                 if (!callee || BUILTINS.has(callee) || callee.length <= 1)
                     continue;
-                // Find enclosing function/method for the call
+                // Find enclosing function/method for the call; fall back to enclosing class
+                // (e.g. calls in val/lazy val body at class level) before falling back to file.
                 const callLine = callName.node.startPosition.row + 1;
-                const caller = findEnclosingFunction(entities, callLine) ?? fileName;
+                const caller = findEnclosingFunction(entities, callLine)
+                    ?? findEnclosing(classRanges, callLine, '')
+                    ?? fileName;
                 const scope = caller;
                 if (!seenCalls.has(scope))
                     seenCalls.set(scope, new Set());
                 const seen = seenCalls.get(scope);
-                if (!seen.has(callee)) {
-                    seen.add(callee);
-                    relationships.push({ srcName: caller, dstName: callee, predicate: 'CALLS' });
+                // If a _qualifier capture is present (field_expression / stable_identifier
+                // patterns like NodeKind.Decision), emit the fully qualified name so that
+                // resolution can use the qualifier to break ties between same-named symbols
+                // in different files (e.g. NodeKind.Decision vs SourceType.Decision).
+                const qualifierCapture = match.captures.find((c) => c.name === '_qualifier');
+                const effectiveCallee = qualifierCapture
+                    ? `${qualifierCapture.node.text}.${callee}`
+                    : callee;
+                if (!seen.has(effectiveCallee)) {
+                    seen.add(effectiveCallee);
+                    relationships.push({ srcName: caller, dstName: effectiveCallee, predicate: 'CALLS' });
+                }
+                continue;
+            }
+            // Type reference captures
+            const refType = match.captures.find((c) => c.name === 'reference.type');
+            if (refType) {
+                const typeName = refType.node.text;
+                if (!typeName || TYPE_BUILTINS.has(typeName) || typeName.length <= 1)
+                    continue;
+                // Use the enclosing class as the src so the edge reads "ClassX REFERENCES TypeY".
+                // Fall back to the file name when no enclosing class is found (top-level usage).
+                const refLine = refType.node.startPosition.row + 1;
+                const src = findEnclosing(classRanges, refLine, typeName) ?? fileName;
+                if (!seenRefs.has(src))
+                    seenRefs.set(src, new Set());
+                const seen = seenRefs.get(src);
+                if (!seen.has(typeName)) {
+                    seen.add(typeName);
+                    relationships.push({ srcName: src, dstName: typeName, predicate: 'REFERENCES' });
                 }
                 continue;
             }
@@ -256,34 +346,36 @@ function qualifiedKey(e) {
  * Callers must treat null as "do not emit" to avoid dangling nodeIds.
  */
 function bestQKey(fileQKeys, filePath, plainName) {
-    const qks = fileQKeys.get(filePath)?.get(plainName) ?? [];
+    const qks = [...new Set(fileQKeys.get(filePath)?.get(plainName) ?? [])];
     return qks.length === 1 ? qks[0] : null;
 }
 /**
- * Resolves CALLS relationships to their cross-file targets by building a
- * symbol table and import map over the full batch of parsed files.
+ * Resolves CALLS and EXTENDS relationships to their cross-file targets by
+ * building a symbol table and import map over the full batch of parsed files.
  *
  * Tiers (in priority order):
- *   0.9 — import-scoped: callee is in a file the caller explicitly imports
- *   0.5 — global fallback: callee exists in exactly one other file (unambiguous)
+ *   0.9 — import-scoped: dst is in a file the src explicitly imports
+ *   0.8 — transitive import-scoped: one re-export hop away
+ *   0.5 — global fallback: dst exists in exactly one other file (unambiguous)
  *
- * Same-file calls (tier 0.95) are already handled correctly by buildPatch and
- * are not emitted here.
+ * Same-file edges are already handled correctly by buildPatch and are not
+ * emitted here.
  *
  * Import resolution handles:
  *   - Stem-based:      './payments'     → 'payments.ts'
  *   - Path-aliased:    '@/lib/payments' → 'payments.ts'  (last segment)
  *   - Directory index: './services'     → 'services/index.ts'
  *   - Bare aliases:    '@components'    → 'components.ts' (strip leading non-word chars)
- *                      '~lib'           → 'lib.ts'
- *   - External bare:   'react'          → unresolved (no match in batch)
+ *   - Dotted paths:    'ix.memory.model.Edge' → stem 'Edge' → 'Edge.scala'
+ *                      (handles Scala/Java package imports where tree-sitter
+ *                       emits each identifier separately)
  *
  * Qualified-key resolution:
- *   - Module-level function: calleeQualifiedKey === calleeName
- *   - Unambiguous class method: calleeQualifiedKey === 'ClassName.method'
- *   - Ambiguous (two classes define same method name): edge not emitted
+ *   - Module-level function/class: dstQualifiedKey === dstName
+ *   - Unambiguous class method: dstQualifiedKey === 'ClassName.method'
+ *   - Ambiguous (two entities share the same plain name): edge not emitted
  */
-export function resolveCallEdges(results) {
+export function resolveEdges(results) {
     // fileQKeys: filePath → (plainName → qualifiedKeys[])
     // Mirrors the entityQKey computation in buildPatch so nodeIds match exactly.
     const fileQKeys = new Map();
@@ -306,8 +398,6 @@ export function resolveCallEdges(results) {
     }
     // stemToFiles: basename-without-extension → filePath[]
     // Matches the last path segment of an import to files in the batch.
-    // e.g. './payments' → modName 'payments' → 'payments.ts'
-    //      '@/lib/payments' → modName 'payments' → 'payments.ts'
     const stemToFiles = new Map();
     for (const r of results) {
         const stem = nodePath.basename(r.filePath, nodePath.extname(r.filePath));
@@ -327,34 +417,77 @@ export function resolveCallEdges(results) {
             dirToIndexFiles.set(dirName, list);
         }
     }
+    // packageToFiles: dotted package path → filePath[] (Scala/Java wildcard imports)
+    // e.g. "ix.memory.model" → all .scala files under .../ix/memory/model/
+    // Builds all suffix keys so that both "model" and "ix.memory.model" resolve.
+    const packageToFiles = new Map();
+    for (const r of results) {
+        const ext = nodePath.extname(r.filePath);
+        if (ext !== '.scala' && ext !== '.java')
+            continue;
+        const dir = nodePath.dirname(r.filePath);
+        const parts = dir.split(/[/\\]/);
+        // Cap at 8 segments to avoid noise from very shallow path components like "src", "main".
+        const maxDepth = Math.min(8, parts.length);
+        for (let i = parts.length - 1; i >= parts.length - maxDepth; i--) {
+            const pkg = parts.slice(i).join('.');
+            const list = packageToFiles.get(pkg) ?? [];
+            if (!list.includes(r.filePath))
+                list.push(r.filePath);
+            packageToFiles.set(pkg, list);
+        }
+    }
+    /** Resolve a module name to matching file paths in the batch. */
+    function modNameToFiles(modName, excludeFp) {
+        const fps = [];
+        // Strip leading non-word chars for bare aliases: '@components' → 'components'
+        const candidates = [modName];
+        const stripped = modName.replace(/^[^a-zA-Z0-9_]+/, '');
+        if (stripped && stripped !== modName)
+            candidates.push(stripped);
+        // Strip file extensions so "explain.js" resolves to the "explain" stem
+        // (TS/JS ESM imports use .js extensions that map to .ts source files)
+        const noExt = modName.replace(/\.(js|ts|mjs|cjs|jsx|tsx|py|scala|java)$/, '');
+        if (noExt !== modName && noExt && !candidates.includes(noExt))
+            candidates.push(noExt);
+        // For dotted paths (Scala/Java: 'ix.memory.model.Edge'), also try last segment
+        const lastDot = modName.lastIndexOf('.');
+        if (lastDot !== -1) {
+            const lastSegment = modName.slice(lastDot + 1);
+            if (lastSegment && !candidates.includes(lastSegment))
+                candidates.push(lastSegment);
+        }
+        for (const cand of candidates) {
+            for (const fp of stemToFiles.get(cand) ?? []) {
+                if (fp !== excludeFp)
+                    fps.push(fp);
+            }
+            for (const fp of dirToIndexFiles.get(cand) ?? []) {
+                if (fp !== excludeFp)
+                    fps.push(fp);
+            }
+        }
+        // Package-path wildcard resolution (Scala/Java): "ix.memory.model" → all files in that dir
+        for (const fp of packageToFiles.get(modName) ?? []) {
+            if (fp !== excludeFp && !fps.includes(fp))
+                fps.push(fp);
+        }
+        return fps;
+    }
     const resolved = [];
     for (const result of results) {
-        const callerFilePath = result.filePath;
-        const callerSymbols = fileHasSymbol.get(callerFilePath);
-        // Build the set of file paths this caller explicitly imports.
-        // For each IMPORTS edge, try the modName as-is, then with leading
-        // non-word characters stripped (handles bare aliases: '@components' → 'components',
-        // '~lib' → 'lib', '#utils' → 'utils').
+        const srcFilePath = result.filePath;
+        const srcSymbols = fileHasSymbol.get(srcFilePath);
+        // Build the set of file paths this file explicitly imports.
         const importedFilePaths = new Set();
         for (const rel of result.relationships) {
             if (rel.predicate !== 'IMPORTS')
                 continue;
-            const candidates = [rel.dstName];
-            const stripped = rel.dstName.replace(/^[^a-zA-Z0-9_]+/, '');
-            if (stripped && stripped !== rel.dstName)
-                candidates.push(stripped);
-            for (const modName of candidates) {
-                for (const fp of stemToFiles.get(modName) ?? []) {
-                    if (fp !== callerFilePath)
-                        importedFilePaths.add(fp);
-                }
-                for (const fp of dirToIndexFiles.get(modName) ?? []) {
-                    if (fp !== callerFilePath)
-                        importedFilePaths.add(fp);
-                }
+            for (const fp of modNameToFiles(rel.dstName, srcFilePath)) {
+                importedFilePaths.add(fp);
             }
         }
-        // Build one-hop transitive import set: files imported by directly-imported files.
+        // Build one-hop transitive import set.
         // Handles re-exports: baz.ts → index.ts (re-exports from bar.ts) → bar.ts
         const transitiveFilePaths = new Set();
         for (const fp of importedFilePaths) {
@@ -364,42 +497,76 @@ export function resolveCallEdges(results) {
             for (const rel of fpResult.relationships) {
                 if (rel.predicate !== 'IMPORTS')
                     continue;
-                const candidates = [rel.dstName];
-                const stripped = rel.dstName.replace(/^[^a-zA-Z0-9_]+/, '');
-                if (stripped && stripped !== rel.dstName)
-                    candidates.push(stripped);
-                for (const modName of candidates) {
-                    for (const transitiveFp of stemToFiles.get(modName) ?? []) {
-                        if (transitiveFp !== callerFilePath && !importedFilePaths.has(transitiveFp))
-                            transitiveFilePaths.add(transitiveFp);
-                    }
-                    for (const transitiveFp of dirToIndexFiles.get(modName) ?? []) {
-                        if (transitiveFp !== callerFilePath && !importedFilePaths.has(transitiveFp))
-                            transitiveFilePaths.add(transitiveFp);
-                    }
+                for (const transitiveFp of modNameToFiles(rel.dstName, srcFilePath)) {
+                    if (!importedFilePaths.has(transitiveFp))
+                        transitiveFilePaths.add(transitiveFp);
                 }
             }
         }
         for (const rel of result.relationships) {
-            if (rel.predicate !== 'CALLS')
+            if (rel.predicate !== 'CALLS' && rel.predicate !== 'EXTENDS' && rel.predicate !== 'REFERENCES')
                 continue;
-            const calleeName = rel.dstName;
-            const callerName = rel.srcName;
+            const dstName = rel.dstName;
+            const srcName = rel.srcName;
+            // Tier 1b: qualifier-assisted (confidence 0.9 / 0.7)
+            // For dotted names like "NodeKind.Decision" (emitted by field_expression queries):
+            // find the file defining the qualifier, then check it also defines the member.
+            // This breaks ties where both NodeKind.Decision and SourceType.Decision exist.
+            const qualDot = dstName.lastIndexOf('.');
+            if (qualDot !== -1) {
+                const qualifierPart = dstName.slice(0, qualDot);
+                const memberPart = dstName.slice(qualDot + 1);
+                if (memberPart && qualifierPart) {
+                    // Try import-scoped qualifier first
+                    const qualImportMatches = [];
+                    for (const fp of importedFilePaths) {
+                        if (fileHasSymbol.get(fp)?.has(qualifierPart))
+                            qualImportMatches.push(fp);
+                    }
+                    if (qualImportMatches.length === 1) {
+                        const qfp = qualImportMatches[0];
+                        if (fileHasSymbol.get(qfp)?.has(memberPart)) {
+                            const dstQualifiedKey = bestQKey(fileQKeys, qfp, memberPart);
+                            if (dstQualifiedKey !== null) {
+                                // dstName must match rel.dstName so buildPatchWithResolution can look it up
+                                resolved.push({ srcFilePath, srcName, dstFilePath: qfp, dstName, dstQualifiedKey, predicate: rel.predicate, confidence: 0.9 });
+                            }
+                        }
+                        continue;
+                    }
+                    // Global qualifier fallback
+                    const qualGlobalMatches = [];
+                    for (const [fp, symbols] of fileHasSymbol) {
+                        if (fp !== srcFilePath && symbols.has(qualifierPart))
+                            qualGlobalMatches.push(fp);
+                    }
+                    if (qualGlobalMatches.length === 1) {
+                        const qfp = qualGlobalMatches[0];
+                        if (fileHasSymbol.get(qfp)?.has(memberPart)) {
+                            const dstQualifiedKey = bestQKey(fileQKeys, qfp, memberPart);
+                            if (dstQualifiedKey !== null) {
+                                resolved.push({ srcFilePath, srcName, dstFilePath: qfp, dstName, dstQualifiedKey, predicate: rel.predicate, confidence: 0.7 });
+                            }
+                        }
+                    }
+                    continue; // qualified name exhausted — don't try bare-name tiers
+                }
+            }
             // Tier 1: same-file — already correct in buildPatch, skip here
-            if (callerSymbols.has(calleeName))
+            if (srcSymbols.has(dstName))
                 continue;
             // Tier 2: import-scoped (confidence 0.9)
             const importMatches = [];
             for (const fp of importedFilePaths) {
-                if (fileHasSymbol.get(fp)?.has(calleeName))
+                if (fileHasSymbol.get(fp)?.has(dstName))
                     importMatches.push(fp);
             }
             if (importMatches.length === 1) {
                 const fp = importMatches[0];
-                const calleeQualifiedKey = bestQKey(fileQKeys, fp, calleeName);
-                if (calleeQualifiedKey === null)
-                    continue; // ambiguous class methods — do not emit bad nodeId
-                resolved.push({ callerFilePath, callerName, calleeFilePath: fp, calleeName, calleeQualifiedKey, confidence: 0.9 });
+                const dstQualifiedKey = bestQKey(fileQKeys, fp, dstName);
+                if (dstQualifiedKey === null)
+                    continue; // ambiguous — do not emit bad nodeId
+                resolved.push({ srcFilePath, srcName, dstFilePath: fp, dstName, dstQualifiedKey, predicate: rel.predicate, confidence: 0.9 });
                 continue;
             }
             if (importMatches.length > 1)
@@ -407,15 +574,15 @@ export function resolveCallEdges(results) {
             // Tier 2.5: transitive import-scoped (confidence 0.8) — one re-export hop away
             const transitiveMatches = [];
             for (const fp of transitiveFilePaths) {
-                if (fileHasSymbol.get(fp)?.has(calleeName))
+                if (fileHasSymbol.get(fp)?.has(dstName))
                     transitiveMatches.push(fp);
             }
             if (transitiveMatches.length === 1) {
                 const fp = transitiveMatches[0];
-                const calleeQualifiedKey = bestQKey(fileQKeys, fp, calleeName);
-                if (calleeQualifiedKey === null)
+                const dstQualifiedKey = bestQKey(fileQKeys, fp, dstName);
+                if (dstQualifiedKey === null)
                     continue;
-                resolved.push({ callerFilePath, callerName, calleeFilePath: fp, calleeName, calleeQualifiedKey, confidence: 0.8 });
+                resolved.push({ srcFilePath, srcName, dstFilePath: fp, dstName, dstQualifiedKey, predicate: rel.predicate, confidence: 0.8 });
                 continue;
             }
             if (transitiveMatches.length > 1)
@@ -423,20 +590,31 @@ export function resolveCallEdges(results) {
             // Tier 3: global fallback (confidence 0.5) — exactly one other file defines it
             const globalMatches = [];
             for (const [fp, symbols] of fileHasSymbol) {
-                if (fp !== callerFilePath && symbols.has(calleeName))
+                if (fp !== srcFilePath && symbols.has(dstName))
                     globalMatches.push(fp);
             }
             if (globalMatches.length === 1) {
                 const fp = globalMatches[0];
-                const calleeQualifiedKey = bestQKey(fileQKeys, fp, calleeName);
-                if (calleeQualifiedKey === null)
-                    continue; // ambiguous class methods — do not emit bad nodeId
-                resolved.push({ callerFilePath, callerName, calleeFilePath: fp, calleeName, calleeQualifiedKey, confidence: 0.5 });
+                const dstQualifiedKey = bestQKey(fileQKeys, fp, dstName);
+                if (dstQualifiedKey === null)
+                    continue; // ambiguous — do not emit bad nodeId
+                resolved.push({ srcFilePath, srcName, dstFilePath: fp, dstName, dstQualifiedKey, predicate: rel.predicate, confidence: 0.5 });
             }
             // 0 or >1 global matches — leave as dangling edge, do not emit
         }
     }
     return resolved;
+}
+/** @deprecated Use resolveEdges instead. */
+export function resolveCallEdges(results) {
+    return resolveEdges(results).map(e => ({
+        callerFilePath: e.srcFilePath,
+        callerName: e.srcName,
+        calleeFilePath: e.dstFilePath,
+        calleeName: e.dstName,
+        calleeQualifiedKey: e.dstQualifiedKey,
+        confidence: e.confidence,
+    }));
 }
 // ---------------------------------------------------------------------------
 // Helpers

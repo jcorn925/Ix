@@ -94,7 +94,7 @@ async function ingestFiles(
   path: string,
   opts: { recursive?: boolean; force?: boolean; format: string; root?: string }
 ): Promise<void> {
-  const [{ parseFile, resolveCallEdges, isGrammarSupported }, { buildPatchWithResolution }] = await loadIngestionModules();
+  const [{ parseFile, resolveEdges, isGrammarSupported }, { buildPatchWithResolution }] = await loadIngestionModules();
   const resolvedPath = nodePath.isAbsolute(path)
     ? path
     : nodePath.resolve(resolveWorkspaceRoot(opts.root), path);
@@ -158,13 +158,14 @@ async function ingestFiles(
         entitiesParsed += parsed.entities.length;
         const previousHash = knownHashes.get(filePath);
         parsedFiles.push({ filePath, parsed, hash, previousHash: previousHash !== hash ? previousHash : undefined });
-      } catch {
+      } catch (err) {
         parseErrors++;
+        process.stderr.write(`\n  [parse error] ${filePath}: ${err}\n`);
       }
     }
 
-    // Phase 2: cross-file CALLS resolution over the full batch
-    const resolvedEdges = resolveCallEdges(parsedFiles.map(f => f.parsed));
+    // Phase 2: cross-file CALLS + EXTENDS resolution over the full batch
+    const resolvedEdges = resolveEdges(parsedFiles.map(f => f.parsed));
 
     // Phase 3: build and commit patches
     for (const { parsed, hash, previousHash } of parsedFiles) {
@@ -173,8 +174,9 @@ async function ingestFiles(
         const result = await client.commitPatch(patch);
         if (result.rev > latestRev) latestRev = result.rev;
         patchesApplied++;
-      } catch {
+      } catch (err) {
         parseErrors++;
+        process.stderr.write(`\n  [commit error] ${parsed.filePath}: ${err}\n`);
       }
     }
   } finally {

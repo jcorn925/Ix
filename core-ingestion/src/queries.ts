@@ -80,6 +80,15 @@ export const TYPESCRIPT_QUERIES = `
   (class_heritage
     (implements_clause
       (type_identifier) @heritage.implements))) @heritage.impl
+
+; Heritage queries - interface extends interface
+(interface_declaration
+  name: (type_identifier) @heritage.class
+  (extends_type_clause
+    (type_identifier) @heritage.extends)) @heritage
+
+; Type references — captures types used in annotations/parameters/return types
+(type_annotation (type_identifier) @reference.type)
 `;
 
 // JavaScript queries - works with tree-sitter-javascript
@@ -180,6 +189,10 @@ export const PYTHON_QUERIES = `
   name: (identifier) @heritage.class
   superclasses: (argument_list
     (identifier) @heritage.extends)) @heritage
+
+; Type references — captures types used in type annotations / hints
+(typed_parameter type: (identifier) @reference.type)
+(typed_default_parameter type: (identifier) @reference.type)
 `;
 
 // Java queries - works with tree-sitter-java
@@ -211,6 +224,12 @@ export const JAVA_QUERIES = `
 ; Heritage - implements interfaces
 (class_declaration name: (identifier) @heritage.class
   (super_interfaces (type_list (type_identifier) @heritage.implements))) @heritage.impl
+
+; Type references — captures types used in field/param/return-type positions
+(field_declaration type: (type_identifier) @reference.type)
+(formal_parameter type: (type_identifier) @reference.type)
+(local_variable_declaration type: (type_identifier) @reference.type)
+(method_declaration type: (type_identifier) @reference.type)
 `;
 
 // C queries - works with tree-sitter-c
@@ -242,6 +261,10 @@ export const C_QUERIES = `
 ; Calls
 (call_expression function: (identifier) @call.name) @call
 (call_expression function: (field_expression field: (field_identifier) @call.name)) @call
+
+; Type references — captures types used in declaration/parameter positions
+(declaration type: (type_identifier) @reference.type)
+(parameter_declaration type: (type_identifier) @reference.type)
 `;
 
 // Go queries - works with tree-sitter-go
@@ -273,6 +296,11 @@ export const GO_QUERIES = `
 
 ; Struct literal construction: User{Name: "Alice"}
 (composite_literal type: (type_identifier) @call.name) @call
+
+; Type references — captures types used in field/param/return-type positions
+(field_declaration type: (type_identifier) @reference.type)
+(parameter_declaration type: (type_identifier) @reference.type)
+(result type: (type_identifier) @reference.type)
 `;
 
 // C++ queries - works with tree-sitter-cpp
@@ -344,6 +372,10 @@ export const CPP_QUERIES = `
   (base_class_clause (type_identifier) @heritage.extends)) @heritage
 (class_specifier name: (type_identifier) @heritage.class
   (base_class_clause (access_specifier) (type_identifier) @heritage.extends)) @heritage
+
+; Type references — captures types used in declaration/parameter positions
+(declaration type: (type_identifier) @reference.type)
+(parameter_declaration type: (type_identifier) @reference.type)
 `;
 
 // C# queries - works with tree-sitter-c-sharp
@@ -398,6 +430,12 @@ export const CSHARP_QUERIES = `
   (base_list (identifier) @heritage.extends)) @heritage
 (class_declaration name: (identifier) @heritage.class
   (base_list (generic_name (identifier) @heritage.extends))) @heritage
+
+; Type references — captures types used in field/param/return-type positions
+(parameter type: (identifier) @reference.type)
+(variable_declaration type: (identifier) @reference.type)
+(field_declaration type: (identifier) @reference.type)
+(method_declaration return_type: (identifier) @reference.type)
 `;
 
 // Rust queries - works with tree-sitter-rust
@@ -428,6 +466,11 @@ export const RUST_QUERIES = `
 
 ; Struct literal construction: User { name: value }
 (struct_expression name: (type_identifier) @call.name) @call
+
+; Type references — captures types used in field/param/return-type positions
+(field_declaration type: (type_identifier) @reference.type)
+(parameter pattern: (_) type: (type_identifier) @reference.type)
+(function_item return_type: (type_identifier) @reference.type)
 
 ; Heritage (trait implementation) — all combinations of concrete/generic trait × concrete/generic type
 (impl_item trait: (type_identifier) @heritage.trait type: (type_identifier) @heritage.class) @heritage
@@ -516,6 +559,9 @@ export const PHP_QUERIES = `
   body: (declaration_list
     (use_declaration
       [(name) (qualified_name)] @heritage.trait))) @heritage
+
+; ── Type references ───────────────────────────────────────────────────────────
+(named_type (name) @reference.type)
 `;
 
 // Ruby queries - works with tree-sitter-ruby
@@ -641,6 +687,9 @@ export const KOTLIN_QUERIES = `
   (delegation_specifier
     (constructor_invocation
       (user_type (type_identifier) @heritage.extends)))) @heritage
+
+; ── Type references ───────────────────────────────────────────────────────────
+(type_reference (user_type (type_identifier) @reference.type))
 `;
 
 // Swift queries - works with tree-sitter-swift
@@ -699,6 +748,9 @@ export const SWIFT_QUERIES = `
 ; Extensions wrap the name in user_type unlike class/struct/enum declarations
 (class_declaration "extension" name: (user_type (type_identifier) @heritage.class)
   (inheritance_specifier inherits_from: (user_type (type_identifier) @heritage.extends))) @heritage
+
+; Type references — captures types used in annotations/parameters/return types
+(type_annotation (user_type (type_identifier) @reference.type))
 `;
 
 // Scala queries - works with tree-sitter-scala
@@ -727,14 +779,11 @@ export const SCALA_QUERIES = `
 (type_definition
   name: (type_identifier) @name) @definition.type
 
-; ── Imports: simple path segments (import a.b.C → captures a, b, C) ─────────
-(import_declaration
-  (identifier) @import.source) @import
-
-; ── Imports: selective { X, Y } (import a.b.{C, D}) ─────────────────────────
-(import_declaration
-  (namespace_selectors
-    (identifier) @import.source)) @import
+; ── Imports: capture full declaration for dotted-path reconstruction ─────────
+; Handles: import ix.memory.model._  (wildcard)
+;          import ix.memory.model.{NodeKind, GraphNode}  (selective)
+;          import ix.memory.model.NodeKind  (simple)
+(import_declaration) @import.stmt
 
 ; ── Calls: direct function call ──────────────────────────────────────────────
 (call_expression
@@ -764,6 +813,43 @@ export const SCALA_QUERIES = `
   name: (identifier) @heritage.class
   extend: (extends_clause
     (type_identifier) @heritage.extends)) @heritage
+
+; ── Type references ───────────────────────────────────────────────────────────
+; Case class parameter types: case class Foo(x: NodeKind)
+(class_parameter (type_identifier) @reference.type)
+; Method parameter types: def foo(x: NodeKind)
+(parameter (type_identifier) @reference.type)
+; Val/var type annotations: val x: NodeKind = ...
+(val_definition (type_identifier) @reference.type)
+(var_definition (type_identifier) @reference.type)
+; Return type annotations: def foo(): NodeKind = ...
+; (type_identifier is a direct child of function_definition, no named field)
+(function_definition (type_identifier) @reference.type)
+; Generic type arguments: Map[NodeId, NodeKind], Option[NodeKind], Set[NodeKind], etc.
+(generic_type (type_arguments (type_identifier) @reference.type))
+
+; ── Qualified singleton / companion-object member access ──────────────────────
+; Two grammar shapes arise in practice:
+;   expression context:  NodeKind.Class      → field_expression
+;   pattern  context:  case Some(NodeKind.Class) => … → stable_identifier
+; Both shapes are captured below. The (#match? ^[A-Z]) predicates restrict to
+; UpperCamelCase identifiers (Scala convention for case objects / companion
+; object members), filtering out lowercase method / field names.
+
+; Expression: val x = NodeKind.Decision
+(field_expression
+  value: (identifier) @_qualifier
+  field: (identifier) @call.name
+  (#match? @_qualifier "^[A-Z]")
+  (#match? @call.name "^[A-Z]"))
+
+; Pattern:  case Some(NodeKind.Class) | Some(NodeKind.Trait) => …
+(stable_identifier
+  (identifier) @_qualifier
+  "."
+  (identifier) @call.name
+  (#match? @_qualifier "^[A-Z]")
+  (#match? @call.name "^[A-Z]"))
 `;
 
 export const LANGUAGE_QUERIES: Record<SupportedLanguages, string> = {

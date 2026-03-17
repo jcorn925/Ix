@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 type IngestionModule = {
   parseFile: (filePath: string, source: string) => any;
-  resolveCallEdges: (results: any[]) => any[];
+  resolveEdges: (results: any[]) => any[];
   isGrammarSupported: (filePath: string) => boolean;
 };
 
