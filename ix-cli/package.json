@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Ix Memory — Persistent Memory for LLM Systems",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client/*": "./dist/client/*",
+    "./cli/*": "./dist/cli/*"
+  },
   "bin": {
     "ix": "dist/cli/main.js"
   },
