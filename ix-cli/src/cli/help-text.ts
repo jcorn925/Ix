@@ -14,6 +14,8 @@ Understand:
   read <target>         Read file content or symbol source code
 
 Explore:
+  trace <symbol>        Follow how a symbol connects upstream and downstream
+  depends <symbol>      Show upstream dependents of a symbol
   inventory             List entities by kind
   rank                  Hotspot discovery by metric
   history <entityId>    Show entity provenance chain
