@@ -73,6 +73,7 @@ export function registerOssCommands(program: Command): void {
   registerContainsCommand(program);
   registerStatsCommand(program);
   registerDoctorCommand(program);
+  registerDependsCommand(program);
   registerReadCommand(program);
   registerInventoryCommand(program);
   registerImpactCommand(program);
