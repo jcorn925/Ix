@@ -296,6 +296,44 @@ describe("overview: leaf target in class", () => {
   });
 });
 
+// ── Container breadcrumb completion ──────────────────────────────────────────
+
+describe("overview: container breadcrumb completion", () => {
+  it("class target system path ends with the class name", () => {
+    const output = makeClassOutput();
+    const last = output.systemPath[output.systemPath.length - 1];
+    expect(last.name).toBe("IxClient");
+    expect(last.kind).toBe("class");
+  });
+
+  it("file target system path ends at the file, no extra segment", () => {
+    const output = makeFileOutput();
+    const last = output.systemPath[output.systemPath.length - 1];
+    expect(last.name).toBe("Node.scala");
+    expect(last.kind).toBe("file");
+  });
+
+  it("region target system path ends at the region", () => {
+    const output = makeRegionOutput();
+    const last = output.systemPath[output.systemPath.length - 1];
+    expect(last.kind).toBe("subsystem");
+  });
+
+  it("interface container appends symbol to breadcrumb", () => {
+    const output = {
+      resolvedTarget: { id: "if-1", kind: "interface", name: "NodeKind" },
+      systemPath: [
+        { name: "API", kind: "system" },
+        { name: "Model / Db", kind: "subsystem" },
+        { name: "Node.scala", kind: "file" },
+        { name: "NodeKind", kind: "interface" },
+      ],
+    };
+    const last = output.systemPath[output.systemPath.length - 1];
+    expect(last.name).toBe("NodeKind");
+  });
+});
+
 // ── Humanized system path ───────────────────────────────────────────────────
 
 describe("overview: humanized system path labels", () => {

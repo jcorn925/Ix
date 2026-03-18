@@ -170,7 +170,14 @@ async function overviewContainer(
     diagnostics.push("No system map. Run `ix map` to see hierarchy.");
   }
 
-  const systemPathMapped = systemPath.map((n) => ({ name: n.name, kind: n.kind }));
+  // Append container symbol to system path for non-file, non-region containers
+  let systemPathMapped = systemPath.map((n) => ({ name: n.name, kind: n.kind }));
+  if (!FILE_KINDS.has(target.kind) && !isRegion) {
+    const lastInPath = systemPathMapped[systemPathMapped.length - 1];
+    if (!lastInPath || lastInPath.name !== target.name) {
+      systemPathMapped = [...systemPathMapped, { name: target.name, kind: target.kind }];
+    }
+  }
 
   const result: OverviewResult = {
     resolvedTarget: { id: target.id, kind: target.kind, name: target.name },
@@ -197,7 +204,7 @@ async function overviewContainer(
     console.log(chalk.bold("\nContains"));
     const sorted = Object.entries(childrenByKind).sort((a, b) => b[1] - a[1]);
     for (const [kind, count] of sorted) {
-      console.log(`  ${chalk.dim(kindLabel(kind).padEnd(16))}${count}`);
+      console.log(`  ${chalk.dim((kindLabel(kind) + ":").padEnd(22))}${count}`);
     }
   }
 
@@ -327,7 +334,7 @@ async function overviewLeaf(
     console.log(chalk.bold("\nNearby structure"));
     const sorted = Object.entries(siblingsByKind).sort((a, b) => b[1] - a[1]);
     for (const [kind, count] of sorted) {
-      console.log(`  ${chalk.dim(siblingKindLabel(kind).padEnd(24))}${count}`);
+      console.log(`  ${chalk.dim((siblingKindLabel(kind) + ":").padEnd(24))}${count}`);
     }
   }
 
