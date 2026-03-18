@@ -18,7 +18,7 @@ import ix.memory.model._
  *   4.  Compute region metrics (cohesion, coupling, boundary ratio)
  *   5.  Infer labels
  *   6.  Score confidence
- *   7.  Persist Region nodes + IN_REGION edges to ArangoDB
+ *   7.  Persist Region nodes + IN_REGION edges to ArangoDB (top-down: system → subsystem → module → file)
  *   8.  Return ArchitectureMap
  */
 class MapService(
@@ -366,27 +366,13 @@ class MapService(
 
     for {
       oldRegions <- queryApi.findNodesByKind(NodeKind.Region, limit = 5000)
-      _          <- if (oldRegions.nonEmpty) submitDeletePatch(oldRegions, rev) else IO.unit
-      _          <- submitUpsertPatch(regions, rev)
+      _          <- submitMapPatch(oldRegions, regions, rev)
     } yield ()
   }
 
-  private def submitDeletePatch(oldNodes: Vector[GraphNode], rev: Rev): IO[Unit] = {
-    val ops = oldNodes.map(n => PatchOp.DeleteNode(n.id))
-    val patch = GraphPatch(
-      patchId   = PatchId(UUID.randomUUID()),
-      actor     = "map-service",
-      timestamp = Instant.now(),
-      source    = PatchSource("ix:map", None, "map-service", SourceType.Inferred),
-      baseRev   = rev,
-      ops       = ops.toVector,
-      replaces  = Vector.empty,
-      intent    = Some("Clear previous map regions before re-computing")
-    )
-    writeApi.commitPatch(patch).void
-  }
+  private def submitMapPatch(oldRegions: Vector[GraphNode], regions: Vector[Region], rev: Rev): IO[Unit] = {
+    val deleteOps: Vector[PatchOp] = oldRegions.map(n => PatchOp.DeleteNode(n.id))
 
-  private def submitUpsertPatch(regions: Vector[Region], rev: Rev): IO[Unit] = {
     val nodeOps: Vector[PatchOp] = regions.map { r =>
       PatchOp.UpsertNode(
         id   = r.id,
@@ -410,41 +396,41 @@ class MapService(
       )
     }
 
-    // IN_REGION edges: file → owning region (level-1 regions only)
+    // IN_REGION edges: region → file (level-1 regions only, top-down)
     val fileEdgeOps: Vector[PatchOp] = regions
       .filter(_.level == 1)
       .flatMap { r =>
         r.memberFiles.toVector.map { fileId =>
           val edgeId = EdgeId(
-            UUID.nameUUIDFromBytes(s"in_region:${fileId.value}:${r.id.value}".getBytes("UTF-8"))
+            UUID.nameUUIDFromBytes(s"in_region:${r.id.value}:${fileId.value}".getBytes("UTF-8"))
           )
           PatchOp.UpsertEdge(
             id        = edgeId,
-            src       = fileId,
-            dst       = r.id,
+            src       = r.id,
+            dst       = fileId,
             predicate = EdgePredicate("IN_REGION"),
             attrs     = Map.empty
           )
         }
       }
 
-    // IN_REGION edges: child region → parent region
+    // IN_REGION edges: parent region → child region (top-down)
     val regionEdgeOps: Vector[PatchOp] = regions.flatMap { r =>
       r.parentId.map { pid =>
         val edgeId = EdgeId(
-          UUID.nameUUIDFromBytes(s"in_region:${r.id.value}:${pid.value}".getBytes("UTF-8"))
+          UUID.nameUUIDFromBytes(s"in_region:${pid.value}:${r.id.value}".getBytes("UTF-8"))
         )
         PatchOp.UpsertEdge(
           id        = edgeId,
-          src       = r.id,
-          dst       = pid,
+          src       = pid,
+          dst       = r.id,
           predicate = EdgePredicate("IN_REGION"),
           attrs     = Map.empty
         )
       }
     }
 
-    val allOps = nodeOps ++ fileEdgeOps ++ regionEdgeOps
+    val allOps = deleteOps ++ nodeOps ++ fileEdgeOps ++ regionEdgeOps
     val patch  = GraphPatch(
       patchId   = PatchId(UUID.nameUUIDFromBytes(s"map:${rev.value}".getBytes("UTF-8"))),
       actor     = "map-service",

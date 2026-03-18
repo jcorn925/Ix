@@ -45,7 +45,7 @@ export function registerMapCommand(program: Command): void {
       `
 Runs Louvain community detection on the weighted file coupling graph to infer
 a multi-level architectural hierarchy. Persists results to the graph as Region
-nodes with IN_REGION edges.
+nodes with IN_REGION edges (top-down: system → subsystem → module → file → symbol).
 
 Levels:
   1 = module       (fine-grained, ~5-20 files)
