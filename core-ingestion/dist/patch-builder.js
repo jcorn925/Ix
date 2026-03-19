@@ -13,11 +13,14 @@ function deterministicId(input) {
         hash.slice(20, 32),
     ].join('-');
 }
+function normalizePath(filePath) {
+    return filePath.replace(/\\/g, '/').toLowerCase();
+}
 function nodeId(filePath, name) {
-    return deterministicId(`${filePath}:${name}`);
+    return deterministicId(`${normalizePath(filePath)}:${name}`);
 }
 function edgeId(filePath, src, dst, predicate) {
-    return deterministicId(`${filePath}:${src}:${dst}:${predicate}`);
+    return deterministicId(`${normalizePath(filePath)}:${src}:${dst}:${predicate}`);
 }
 // ---------------------------------------------------------------------------
 // Source type from file extension
@@ -37,7 +40,7 @@ export function extractorName() {
 export const PREVIOUS_EXTRACTORS = ['tree-sitter/1.11', 'tree-sitter/1.10', 'tree-sitter/1.9', 'tree-sitter/1.8', 'tree-sitter/1.7', 'tree-sitter/1.6', 'tree-sitter/1.5', 'tree-sitter/1.4', 'tree-sitter/1.3', 'tree-sitter/1.2', 'tree-sitter/1.1'];
 /** Compute a patchId for a (filePath, sourceHash, extractorVersion) triple. */
 function computePatchId(filePath, sourceHash, extractor) {
-    return deterministicId(`${filePath}:${sourceHash}:${extractor}`);
+    return deterministicId(`${normalizePath(filePath)}:${sourceHash}:${extractor}`);
 }
 /** Compute the legacy patchId (pre-1.1 scheme, no extractor suffix). */
 function legacyPatchId(filePath, sourceHash) {

@@ -485,8 +485,6 @@ export function registerTraceCommand(program: Command): void {
         console.log(chalk.bold("\nTrace"));
         printKV("Direction", cap(direction));
         printKV("Kind     ", cap(relKind));
-        printKV("Depth    ", String(maxDepth));
-        if (isFinite(maxNodes)) printKV("Cap      ", String(maxNodes));
 
         if (tree.length === 0) {
           const relDir = doUpstream ? "upstream" : "downstream";

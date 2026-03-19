@@ -18,12 +18,16 @@ function deterministicId(input: string): string {
   ].join('-');
 }
 
+function normalizePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/').toLowerCase();
+}
+
 function nodeId(filePath: string, name: string): string {
-  return deterministicId(`${filePath}:${name}`);
+  return deterministicId(`${normalizePath(filePath)}:${name}`);
 }
 
 function edgeId(filePath: string, src: string, dst: string, predicate: string): string {
-  return deterministicId(`${filePath}:${src}:${dst}:${predicate}`);
+  return deterministicId(`${normalizePath(filePath)}:${src}:${dst}:${predicate}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +50,7 @@ export const PREVIOUS_EXTRACTORS = ['tree-sitter/1.11', 'tree-sitter/1.10', 'tre
 
 /** Compute a patchId for a (filePath, sourceHash, extractorVersion) triple. */
 function computePatchId(filePath: string, sourceHash: string, extractor: string): string {
-  return deterministicId(`${filePath}:${sourceHash}:${extractor}`);
+  return deterministicId(`${normalizePath(filePath)}:${sourceHash}:${extractor}`);
 }
 
 /** Compute the legacy patchId (pre-1.1 scheme, no extractor suffix). */

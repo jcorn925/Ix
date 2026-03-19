@@ -227,7 +227,7 @@ export function registerDependsCommand(program: Command): void {
         return;
       }
 
-      console.log(chalk.bold(`Dependents of ${target.name}:`));
+      console.log(chalk.bold(`Dependents`));
       const rootLine = `  ${chalk.cyan((target.kind ?? "").padEnd(10))} ${chalk.bold(target.name)}`;
       console.log(rootLine);
 
