@@ -1,0 +1,24 @@
+name: Notify Notion Sync
+
+on:
+  push:
+  issues:
+    types: [opened, closed, reopened, edited, labeled, unlabeled, assigned, unassigned]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.GH_APP_ID }}
+          private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Trigger sync workflow
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: ix-infrastructure/ix-notion-sync
+          event-type: repo-change
