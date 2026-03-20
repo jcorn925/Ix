@@ -122,6 +122,11 @@ export async function ingestFiles(
 
   // Phase timing marks
   const timings = { discoverMs: 0, hashMs: 0, parseMs: 0, resolveMs: 0, commitMs: 0 };
+  const resolveStats = {
+    importLookups: 0, transitiveLookups: 0, globalFallbacks: 0,
+    globalCandidateTotal: 0, resolvedImport: 0, resolvedTransitive: 0,
+    resolvedGlobal: 0, resolvedQualifier: 0, skippedSameFile: 0, skippedAmbiguous: 0,
+  };
 
   try {
     // Phase: discover files
@@ -179,15 +184,24 @@ export async function ingestFiles(
     timings.parseMs = Math.round(parsed - hashed);
 
     // Phase: cross-file CALLS + EXTENDS resolution over the full batch
-    const resolvedEdges = resolveEdges(parsedFiles.map(f => f.parsed));
+    const resolvedEdges = (resolveEdges as Function)(parsedFiles.map(f => f.parsed), resolveStats);
     const resolved = performance.now();
     timings.resolveMs = Math.round(resolved - parsed);
+
+    // Pre-group resolved edges by source file for O(1) lookup in patch building
+    const edgesByFile = new Map<string, typeof resolvedEdges>();
+    for (const edge of resolvedEdges) {
+      let arr = edgesByFile.get(edge.srcFilePath);
+      if (!arr) { arr = []; edgesByFile.set(edge.srcFilePath, arr); }
+      arr.push(edge);
+    }
+    const emptyEdges: typeof resolvedEdges = [];
 
     // Phase: build patches and bulk commit
     const patches: GraphPatchPayload[] = [];
     for (const { parsed: p, hash, previousHash } of parsedFiles) {
       try {
-        patches.push(buildPatchWithResolution(p, hash, resolvedEdges, previousHash));
+        patches.push(buildPatchWithResolution(p, hash, edgesByFile.get(p.filePath) ?? emptyEdges, previousHash));
       } catch (err) {
         parseErrors++;
         process.stderr.write(`\n  [patch build error] ${p.filePath}: ${err}\n`);
@@ -237,6 +251,7 @@ export async function ingestFiles(
       skipReasons: { unchanged: filesSkipped, emptyFile: 0, parseError: parseErrors, tooLarge },
       elapsedSeconds: parseFloat(elapsed),
       timings,
+      resolveStats,
     }, null, 2));
   } else {
     console.log(chalk.bold('\nIngest summary'));
@@ -261,6 +276,17 @@ export async function ingestFiles(
       console.log(chalk.dim(`    parse:    ${timings.parseMs}ms`));
       console.log(chalk.dim(`    resolve:  ${timings.resolveMs}ms`));
       console.log(chalk.dim(`    commit:   ${timings.commitMs}ms`));
+      console.log(chalk.dim(`\n  Resolve stats:`));
+      console.log(chalk.dim(`    import lookups:     ${resolveStats.importLookups}`));
+      console.log(chalk.dim(`    transitive lookups: ${resolveStats.transitiveLookups}`));
+      console.log(chalk.dim(`    global fallbacks:   ${resolveStats.globalFallbacks}`));
+      console.log(chalk.dim(`    avg candidates:     ${resolveStats.globalFallbacks > 0 ? (resolveStats.globalCandidateTotal / resolveStats.globalFallbacks).toFixed(1) : '0'}`));
+      console.log(chalk.dim(`    resolved import:    ${resolveStats.resolvedImport}`));
+      console.log(chalk.dim(`    resolved transitive:${resolveStats.resolvedTransitive}`));
+      console.log(chalk.dim(`    resolved global:    ${resolveStats.resolvedGlobal}`));
+      console.log(chalk.dim(`    resolved qualifier: ${resolveStats.resolvedQualifier}`));
+      console.log(chalk.dim(`    skipped same-file:  ${resolveStats.skippedSameFile}`));
+      console.log(chalk.dim(`    skipped ambiguous:  ${resolveStats.skippedAmbiguous}`));
     }
 
     console.log();

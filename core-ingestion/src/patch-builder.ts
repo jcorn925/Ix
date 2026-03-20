@@ -197,14 +197,15 @@ export function buildPatchWithResolution(
   previousSourceHash?: string,
 ): GraphPatchPayload {
   // Build lookup: `${predicate}:${dstName}` → { dstFilePath, dstQualifiedKey }
+  // Callers should pass only edges for this file (pre-grouped) for best performance,
+  // but we still tolerate the full array for backward compatibility.
   const edgeResolution = new Map<string, { dstFilePath: string; dstQualifiedKey: string }>();
   for (const edge of resolvedEdges) {
-    if (edge.srcFilePath === result.filePath) {
-      edgeResolution.set(`${edge.predicate}:${edge.dstName}`, {
-        dstFilePath: edge.dstFilePath,
-        dstQualifiedKey: edge.dstQualifiedKey,
-      });
-    }
+    if (edge.srcFilePath !== result.filePath) continue;
+    edgeResolution.set(`${edge.predicate}:${edge.dstName}`, {
+      dstFilePath: edge.dstFilePath,
+      dstQualifiedKey: edge.dstQualifiedKey,
+    });
   }
 
   const { filePath, entities, relationships } = result;
