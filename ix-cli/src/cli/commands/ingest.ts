@@ -192,6 +192,7 @@ export async function ingestFiles(
 
     for (const filePath of filePaths) {
       progressCurrent++;
+      if (interval) process.stderr.write('\r' + renderProgressLine(progressPhase, progressCurrent, progressTotal));
       try {
         const fileSize = fs.statSync(filePath).size;
         if (fileSize === 0) { filesSkipped++; continue; }
