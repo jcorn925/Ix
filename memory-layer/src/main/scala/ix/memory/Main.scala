@@ -46,7 +46,7 @@ object Main extends IOApp.Simple {
       mapService       = new MapService(client, queryApi, writeApi)
 
       // 4. HTTP routes
-      routes = Routes.all(contextService, ingestionService, bulkIngestionService, queryApi, writeApi, conflictService, client, mapService)
+      routes = Routes.all(contextService, ingestionService, bulkIngestionService, queryApi, writeApi, conflictService, client, mapService, bulkWriteApi)
 
       // 5. Server
       server <- EmberServerBuilder

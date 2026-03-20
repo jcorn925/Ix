@@ -69,10 +69,11 @@ export function registerIngestCommand(program: Command): void {
     .option('--force', 'Force re-ingest even if files are unchanged (useful after parser upgrades)')
     .option('--format <fmt>', 'Output format (text|json)', 'text')
     .option('--root <dir>', 'Workspace root directory')
+    .option('--debug', 'Show phase timing breakdown', false)
     .addHelpText('after', '\nExamples:\n  ix ingest ./src\n  ix ingest --path ./src --force\n  ix ingest --github owner/repo\n  ix ingest --github owner/repo --since 2026-01-01 --limit 20 --format json\n  ix ingest --github owner/repo --token ghp_xxxx')
     .action(async (positionalPath: string | undefined, opts: {
       path?: string; recursive?: boolean; force?: boolean; github?: string; token?: string;
-      since?: string; limit: string; format: string; root?: string;
+      since?: string; limit: string; format: string; root?: string; debug?: boolean;
     }) => {
       const effectivePath = positionalPath ?? opts.path;
       if (opts.github) {
@@ -92,13 +93,14 @@ export function registerIngestCommand(program: Command): void {
 
 export async function ingestFiles(
   path: string,
-  opts: { recursive?: boolean; force?: boolean; format: string; root?: string }
+  opts: { recursive?: boolean; force?: boolean; format: string; root?: string; debug?: boolean }
 ): Promise<void> {
   const [{ parseFile, resolveEdges, isGrammarSupported }, { buildPatchWithResolution }] = await loadIngestionModules();
   const resolvedPath = nodePath.isAbsolute(path)
     ? path
     : nodePath.resolve(resolveWorkspaceRoot(opts.root), path);
 
+  const debug = opts.debug || process.env.IX_DEBUG === '1';
   const client = new IxClient(getEndpoint());
   const start = performance.now();
 
@@ -110,6 +112,7 @@ export async function ingestFiles(
   }, 200) : null;
 
   let filesDiscovered = 0;
+  let filesChanged = 0;
   let patchesApplied = 0;
   let filesSkipped = 0;
   let parseErrors = 0;
@@ -117,19 +120,26 @@ export async function ingestFiles(
   let latestRev = 0;
   let entitiesParsed = 0;
 
+  // Phase timing marks
+  const timings = { discoverMs: 0, hashMs: 0, parseMs: 0, resolveMs: 0, commitMs: 0 };
+
   try {
-    // Collect files
+    // Phase: discover files
     const stat = fs.statSync(resolvedPath);
     const filePaths: string[] = stat.isFile()
       ? [resolvedPath]
       : Array.from(walkFiles(resolvedPath, opts.recursive ?? true, isGrammarSupported));
 
     filesDiscovered = filePaths.length;
+    const discovered = performance.now();
+    timings.discoverMs = Math.round(discovered - start);
 
-    // Load existing source hashes for change detection (unless --force)
-    const knownHashes = opts.force ? new Map<string, string>() : await loadExistingHashes(client, filePaths);
+    // Phase: hash lookup
+    const knownHashes = opts.force ? new Map<string, string>() : await loadExistingHashes(client, filePaths, debug);
+    const hashed = performance.now();
+    timings.hashMs = Math.round(hashed - discovered);
 
-    // Phase 1: parse all files
+    // Phase: parse all files
     type ParsedFile = { filePath: string; parsed: any; hash: string; previousHash: string | undefined };
     const parsedFiles: ParsedFile[] = [];
 
@@ -164,21 +174,49 @@ export async function ingestFiles(
       }
     }
 
-    // Phase 2: cross-file CALLS + EXTENDS resolution over the full batch
-    const resolvedEdges = resolveEdges(parsedFiles.map(f => f.parsed));
+    filesChanged = parsedFiles.length;
+    const parsed = performance.now();
+    timings.parseMs = Math.round(parsed - hashed);
 
-    // Phase 3: build and commit patches
-    for (const { parsed, hash, previousHash } of parsedFiles) {
+    // Phase: cross-file CALLS + EXTENDS resolution over the full batch
+    const resolvedEdges = resolveEdges(parsedFiles.map(f => f.parsed));
+    const resolved = performance.now();
+    timings.resolveMs = Math.round(resolved - parsed);
+
+    // Phase: build patches and bulk commit
+    const patches: GraphPatchPayload[] = [];
+    for (const { parsed: p, hash, previousHash } of parsedFiles) {
       try {
-        const patch = buildPatchWithResolution(parsed, hash, resolvedEdges, previousHash);
-        const result = await client.commitPatch(patch);
-        if (result.rev > latestRev) latestRev = result.rev;
-        patchesApplied++;
+        patches.push(buildPatchWithResolution(p, hash, resolvedEdges, previousHash));
       } catch (err) {
         parseErrors++;
-        process.stderr.write(`\n  [commit error] ${parsed.filePath}: ${err}\n`);
+        process.stderr.write(`\n  [patch build error] ${p.filePath}: ${err}\n`);
       }
     }
+
+    if (patches.length > 0) {
+      try {
+        const result = await client.commitPatchBulk(patches);
+        latestRev = result.rev;
+        patchesApplied = patches.length;
+      } catch (err) {
+        // Fallback: try per-file commits if bulk endpoint fails
+        if (debug) process.stderr.write(`\n  [bulk commit failed, falling back to per-file] ${err}\n`);
+        for (const patch of patches) {
+          try {
+            const result = await client.commitPatch(patch);
+            if (result.rev > latestRev) latestRev = result.rev;
+            patchesApplied++;
+          } catch (commitErr) {
+            parseErrors++;
+            process.stderr.write(`\n  [commit error] ${patch.source?.uri}: ${commitErr}\n`);
+          }
+        }
+      }
+    }
+
+    const committed = performance.now();
+    timings.commitMs = Math.round(committed - resolved);
   } finally {
     if (interval) {
       clearInterval(interval);
@@ -191,17 +229,20 @@ export async function ingestFiles(
   if (opts.format === 'json') {
     console.log(JSON.stringify({
       filesProcessed: filesDiscovered,
+      filesChanged,
       patchesApplied,
       filesSkipped,
       entitiesParsed,
       latestRev,
       skipReasons: { unchanged: filesSkipped, emptyFile: 0, parseError: parseErrors, tooLarge },
       elapsedSeconds: parseFloat(elapsed),
+      timings,
     }, null, 2));
   } else {
     console.log(chalk.bold('\nIngest summary'));
     console.log(`  processed:   ${patchesApplied} files (${elapsed}s)`);
     console.log(`  discovered:  ${filesDiscovered} files`);
+    console.log(`  changed:     ${filesChanged} files`);
     if (filesSkipped > 0) console.log(`  ${chalk.dim('skipped unchanged:')} ${filesSkipped}`);
     if (parseErrors > 0) console.log(`  ${chalk.red('parse errors:')}      ${parseErrors}`);
     if (tooLarge > 0) console.log(`  ${chalk.dim('skipped too large:')} ${tooLarge}`);
@@ -212,6 +253,16 @@ export async function ingestFiles(
     } else if (patchesApplied === 0 && filesDiscovered > 0) {
       console.log(chalk.dim('\n  All files unchanged since last ingest.'));
     }
+
+    if (debug) {
+      console.log(chalk.dim(`\n  Phase timings:`));
+      console.log(chalk.dim(`    discover: ${timings.discoverMs}ms`));
+      console.log(chalk.dim(`    hash:     ${timings.hashMs}ms`));
+      console.log(chalk.dim(`    parse:    ${timings.parseMs}ms`));
+      console.log(chalk.dim(`    resolve:  ${timings.resolveMs}ms`));
+      console.log(chalk.dim(`    commit:   ${timings.commitMs}ms`));
+    }
+
     console.log();
   }
 }
@@ -220,11 +271,11 @@ export async function ingestFiles(
 // Load existing hashes from the server for change detection
 // ---------------------------------------------------------------------------
 
-async function loadExistingHashes(client: IxClient, filePaths: string[]): Promise<Map<string, string>> {
+async function loadExistingHashes(client: IxClient, filePaths: string[], debug = false): Promise<Map<string, string>> {
   try {
-    const hashes = await (client as any).getSourceHashes(filePaths);
-    return new Map(Object.entries(hashes ?? {}));
-  } catch {
+    return await client.getSourceHashes(filePaths);
+  } catch (err) {
+    if (debug) process.stderr.write(`\n  [hash lookup failed] ${err}\n`);
     return new Map();
   }
 }

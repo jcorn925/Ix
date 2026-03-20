@@ -10,7 +10,7 @@ import org.http4s.dsl.io._
 
 import ix.memory.conflict.ConflictService
 import ix.memory.context.ContextService
-import ix.memory.db.{ArangoClient, GraphQueryApi, GraphWriteApi}
+import ix.memory.db.{ArangoClient, BulkWriteApi, GraphQueryApi, GraphWriteApi}
 import ix.memory.ingestion.{BulkIngestionService, IngestionService}
 import ix.memory.map.MapService
 
@@ -24,7 +24,8 @@ object Routes {
     writeApi:             GraphWriteApi,
     conflictService:      ConflictService,
     client:               ArangoClient,
-    mapService:           MapService
+    mapService:           MapService,
+    bulkWriteApi:         BulkWriteApi
   ): HttpRoutes[IO] = {
 
     val health = HttpRoutes.of[IO] {
@@ -47,13 +48,15 @@ object Routes {
     val statsRoutes         = new StatsRoutes(client).routes
     val patchCommitRoutes   = new PatchCommitRoutes(writeApi).routes
     val listRoutes          = new ListRoutes(queryApi).routes
-    val mapRoutes           = new MapRoutes(mapService).routes
-    val resetRoutes         = new ResetRoutes(client).routes
+    val mapRoutes               = new MapRoutes(mapService).routes
+    val resetRoutes             = new ResetRoutes(client).routes
+    val sourceHashRoutes        = new SourceHashRoutes(queryApi).routes
+    val bulkPatchCommitRoutes   = new BulkPatchCommitRoutes(bulkWriteApi, queryApi).routes
 
     health <+> contextRoutes <+> ingestionRoutes <+> entityRoutes <+>
       diffRoutes <+> conflictRoutes <+> decideRoutes <+> searchRoutes <+>
       truthRoutes <+> patchRoutes <+> decisionListRoutes <+> expandRoutes <+>
       statsRoutes <+> patchCommitRoutes <+> listRoutes <+> goalRoutes <+>
-      mapRoutes <+> resetRoutes
+      mapRoutes <+> resetRoutes <+> sourceHashRoutes <+> bulkPatchCommitRoutes
   }
 }
