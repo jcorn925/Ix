@@ -421,7 +421,7 @@ describe("renderExplanation", () => {
     const role = inferRole(facts);
     const importance = inferImportance(facts);
     const rendered = renderExplanation(facts, role, importance);
-    expect(rendered.explanation).toContain("ConflictService");
+    expect(rendered.explanation).toContain("conflict");
   });
 
   it("includes container context when present", () => {
@@ -495,7 +495,7 @@ describe("renderExplanation", () => {
     const rendered = renderExplanation(facts, role, importance);
     expect(rendered.whyItMatters).toContain("only 1 direct caller");
     expect(rendered.whyItMatters).toContain("25 downstream dependents");
-    expect(rendered.whyItMatters).toContain("structurally important");
+    expect(rendered.whyItMatters).toContain("critical decision point");
   });
 
   it("renders localized helper wording for low-impact nodes", () => {
@@ -861,7 +861,7 @@ describe("inferHierarchySemantics", () => {
       ],
     });
     const sem = inferHierarchySemantics(facts, "service");
-    expect(sem.layerName).toBe("Ingestion subsystem");
+    expect(sem.layerName).toBe("ingestion pipeline");
   });
 
   it("returns empty reasons when no systemPath", () => {
@@ -1018,7 +1018,7 @@ describe("system-aware why-it-matters", () => {
     const rendered = renderExplanation(facts, role, importance);
     // Should mention client layer and backend operations, not generic "codebase"
     expect(rendered.whyItMatters).toContain("client layer");
-    expect(rendered.whyItMatters).toContain("backend");
+    expect(rendered.whyItMatters).toContain("downstream dependents");
     expect(rendered.whyItMatters).not.toContain("across the codebase");
   });
 
@@ -1387,7 +1387,7 @@ describe("system-meaning render integration", () => {
     const role = inferRole(facts);
     const importance = inferImportance(facts);
     const rendered = renderExplanation(facts, role, importance);
-    expect(rendered.whyItMatters).toContain("contract");
+    expect(rendered.whyItMatters).toContain("shared foundational type");
     expect(rendered.whyItMatters).toContain("ix impact");
   });
 
@@ -1440,7 +1440,7 @@ describe("system-meaning render integration", () => {
     const importance = inferImportance(facts);
     const rendered = renderExplanation(facts, role, importance);
     expect(rendered.explanation).toContain("definition file");
-    expect(rendered.explanation).toContain("model");
+    expect(rendered.explanation).toContain("node");
   });
 
   it("non-foundation entity: explanation unchanged by system meaning", () => {

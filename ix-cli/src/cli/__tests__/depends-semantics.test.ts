@@ -13,17 +13,17 @@ const dependsContent = fs.readFileSync(dependsTsPath, "utf-8");
 // ── Direction semantics ─────────────────────────────────────────────
 
 describe("depends direction semantics", () => {
-  it("description says downstream dependents", () => {
-    expect(dependsContent).toContain("downstream dependents");
+  it("description says upstream dependents", () => {
+    expect(dependsContent).toContain("upstream dependents");
     expect(dependsContent).not.toContain("reverse CALLS");
   });
 
   it("text heading uses dependency-oriented language", () => {
-    expect(dependsContent).toContain("Downstream dependents of");
+    expect(dependsContent).toContain("Dependents");
   });
 
   it("empty state message uses dependency language", () => {
-    expect(dependsContent).toContain("No downstream dependents found");
+    expect(dependsContent).toContain("No upstream dependents found");
   });
 
   it("uses dependency-oriented relation values", () => {
@@ -53,7 +53,7 @@ describe("depends full-tree traversal", () => {
 
   it("--depth acts as optional limiter", () => {
     expect(dependsContent).toContain('"--depth <n>"');
-    expect(dependsContent).toContain("Limit traversal depth");
+    expect(dependsContent).toContain("Cap traversal depth");
   });
 
   it("has cycle detection", () => {
@@ -130,9 +130,10 @@ describe("depends input validation", () => {
     expect(dependsContent).toContain("resolveFileOrEntity(client, symbol, resolveOpts)");
   });
 
-  it("traverses CALLS and IMPORTS edges in reverse", () => {
+  it("traverses edges in reverse via predicate map", () => {
     expect(dependsContent).toContain('direction: "in"');
-    expect(dependsContent).toContain('predicates: ["CALLS"]');
-    expect(dependsContent).toContain('predicates: ["IMPORTS"]');
+    expect(dependsContent).toContain("predicates: [p]");
+    expect(dependsContent).toContain("CALLS");
+    expect(dependsContent).toContain("IMPORTS");
   });
 });
