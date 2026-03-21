@@ -324,10 +324,11 @@ export function registerTraceCommand(program: Command): void {
           console.log(chalk.bold("\nRoute"));
           for (let i = 0; i < pathNodes.length; i++) {
             const n = pathNodes[i];
+            const kindStr = chalk.cyan((n.kind ?? "").padEnd(10));
             if (i === 0) {
-              console.log(`  ${n.name}`);
+              console.log(`  ${kindStr} ${n.name}`);
             } else {
-              console.log(`  ${chalk.dim("→")} ${n.name}`);
+              console.log(`  ${chalk.dim("→")} ${kindStr} ${n.name}`);
             }
           }
 
