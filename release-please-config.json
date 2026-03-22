@@ -9,7 +9,6 @@
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         "ix-cli/package.json",
-        "ix-cli/package-lock.json",
         {
           "type": "generic",
           "path": "ix-cli/src/cli/main.ts",
