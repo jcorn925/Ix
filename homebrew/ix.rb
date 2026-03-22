@@ -1,8 +1,8 @@
 class Ix < Formula
   desc "Persistent memory for LLM systems — CLI for the Ix knowledge graph"
   homepage "https://github.com/ix-infrastructure/Ix"
-  url "https://github.com/ix-infrastructure/Ix/archive/refs/tags/v0.3.3.tar.gz"
-  sha256 "1296697b2b8a71e4b1b270514c9e7560506f2d078e88f2dd872891bcabe864e9"
+  url "https://github.com/ix-infrastructure/Ix/archive/refs/tags/v0.3.4.tar.gz"
+  sha256 "32bfaa786849230d3ee72198b0a89ce7706dfd011c9919d69fc9929265c10fa7"
   license "MIT"
   head "https://github.com/ix-infrastructure/Ix.git", branch: "main"
 
