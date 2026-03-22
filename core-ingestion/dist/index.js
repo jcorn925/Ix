@@ -1,5 +1,6 @@
 import * as nodePath from 'node:path';
 import * as crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 // @ts-ignore — tree-sitter has no bundled types
 import Parser from 'tree-sitter';
 // @ts-ignore
@@ -26,6 +27,17 @@ import Ruby from 'tree-sitter-ruby';
 import PHP from 'tree-sitter-php';
 // @ts-ignore
 import Scala from 'tree-sitter-scala';
+const _require = createRequire(import.meta.url);
+function tryLoadGrammar(pkg) {
+    try {
+        return _require(pkg);
+    }
+    catch {
+        return null;
+    }
+}
+const Kotlin = tryLoadGrammar('tree-sitter-kotlin');
+const Swift = tryLoadGrammar('tree-sitter-swift');
 import { SupportedLanguages, languageFromPath } from './languages.js';
 import { LANGUAGE_QUERIES } from './queries.js';
 import { classifyFileRole } from './role-classifier.js';
@@ -45,6 +57,8 @@ const GRAMMAR_MAP = {
     [SupportedLanguages.Ruby]: Ruby,
     [SupportedLanguages.PHP]: PHP.php_only,
     [SupportedLanguages.Scala]: Scala,
+    ...(Kotlin ? { [SupportedLanguages.Kotlin]: Kotlin } : {}),
+    ...(Swift ? { [SupportedLanguages.Swift]: Swift } : {}),
 };
 // Capture key prefix → NodeKind string
 const DEFINITION_KIND_MAP = {
@@ -157,7 +171,7 @@ export function parseFile(filePath, source) {
     try {
         const parser = getParser();
         parser.setLanguage(grammar);
-        const tree = parser.parse(source);
+        const tree = parser.parse(source, undefined, { bufferSize: source.length + 1 });
         const cacheKey = isTsx ? 'tsx' : language;
         const query = getCachedQuery(cacheKey, grammar, queries);
         const matches = query.matches(tree.rootNode);

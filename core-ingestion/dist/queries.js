@@ -109,6 +109,25 @@ export const JAVASCRIPT_QUERIES = `
     name: (identifier) @name
     value: (function_expression))) @definition.function
 
+; var foo = function() {} (CommonJS var declarations)
+(variable_declaration
+  (variable_declarator
+    name: (identifier) @name
+    value: (function_expression))) @definition.function
+
+; var foo = () => {} (CommonJS var arrow functions)
+(variable_declaration
+  (variable_declarator
+    name: (identifier) @name
+    value: (arrow_function))) @definition.function
+
+; obj.method = function name() {} (prototype/mixin method assignments)
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      property: (property_identifier) @name)
+    right: (function_expression))) @definition.function
+
 (export_statement
   declaration: (lexical_declaration
     (variable_declarator
@@ -132,6 +151,12 @@ export const JAVASCRIPT_QUERIES = `
 (call_expression
   function: (import)
   arguments: (arguments (string) @import.source)) @import
+
+; CommonJS require() → IMPORTS
+(call_expression
+  function: (identifier) @_req
+  arguments: (arguments (string) @import.source)
+  (#eq? @_req "require")) @import
 
 (call_expression
   function: (identifier) @call.name) @call

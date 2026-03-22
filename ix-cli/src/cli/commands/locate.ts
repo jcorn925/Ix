@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import type { Command } from "commander";
-import chalk from "chalk";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint } from "../config.js";
 import {
@@ -11,6 +10,7 @@ import { isFileStale } from "../stale.js";
 import { stderr } from "../stderr.js";
 import { getSystemPath, hasMapData } from "../hierarchy.js";
 import { humanizeLabel } from "../impact/risk-semantics.js";
+import { renderSection, renderKeyValue, renderNote, renderWarning, renderBreadcrumb } from "../ui.js";
 
 const CONTAINER_KINDS = new Set(["class", "module", "file", "trait", "object", "interface"]);
 const FILE_KINDS = new Set(["file"]);
@@ -204,10 +204,11 @@ function toRepoRelative(filePath: string): string {
 // ── Humanized system path breadcrumb ────────────────────────────────────────
 
 function humanizeBreadcrumb(nodes: Array<{ name: string; kind: string }>): string {
-  return nodes.map((n) => {
+  const humanized = nodes.map((n) => {
     if (REGION_KINDS.has(n.kind)) return humanizeLabel(n.name).replace(/ layer$/, "");
     return n.name;
-  }).join(" → ");
+  });
+  return renderBreadcrumb(humanized.map((name) => ({ name })));
 }
 
 // ── Output ──────────────────────────────────────────────────────────────────
@@ -218,7 +219,7 @@ function outputLocate(output: LocateOutput, symbol: string, format: string): voi
     return;
   }
 
-  if (output.stale) stderr(chalk.yellow("⚠ Some results may be stale. Run ix ingest to update.\n"));
+  if (output.stale) renderWarning("Some results may be stale. Run ix ingest to update.");
 
   if (!output.resolvedTarget) {
     stderr(`No graph entity found for "${symbol}".`);
@@ -231,26 +232,26 @@ function outputLocate(output: LocateOutput, symbol: string, format: string): voi
   // Location section
   const hasLocation = t.path || output.lineRange || output.container;
   if (hasLocation) {
-    console.log(chalk.bold("\nLocation"));
+    renderSection("Location");
     if (t.path) {
-      console.log(`  ${chalk.dim("File:".padEnd(16))}${t.path}`);
+      renderKeyValue("File", t.path);
     }
     if (output.lineRange) {
-      console.log(`  ${chalk.dim("Lines:".padEnd(16))}${output.lineRange.start}-${output.lineRange.end}`);
+      renderKeyValue("Lines", `${output.lineRange.start}-${output.lineRange.end}`);
     }
     if (output.container) {
-      console.log(`  ${chalk.dim("Contained in:".padEnd(16))}${output.container.name}`);
+      renderKeyValue("Contained in", output.container.name);
     }
   }
 
   // System path section
   if (output.systemPath && output.systemPath.length > 1 && output.hasMapData) {
-    console.log(chalk.bold("\nSystem path"));
+    renderSection("System path");
     console.log(`  ${humanizeBreadcrumb(output.systemPath)}`);
   }
 
   // Diagnostics
   for (const d of output.diagnostics) {
-    stderr(chalk.dim(`  ${d}`));
+    renderNote(d);
   }
 }

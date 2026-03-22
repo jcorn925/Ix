@@ -34,6 +34,8 @@ const SUPPORTED_EXTENSIONS = new Set([
 const IGNORE_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'target', '.next',
   '.cache', '__pycache__', '.ix', '.claude', '.gitnexus',
+  'test', 'tests', '__tests__', 'spec', 'specs', 'e2e',
+  'examples', 'fixtures', '__mocks__', '__fixtures__',
 ]);
 
 const MAX_FILE_BYTES = 1024 * 1024; // 1 MB

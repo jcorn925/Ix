@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import chalk from "chalk";
+import { renderSection, renderKeyValue, renderWarning, renderNote, renderSuccess } from "../ui.js";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint, resolveWorkspaceRoot } from "../config.js";
 import { detectStaleFiles } from "../stale.js";
@@ -34,25 +34,26 @@ export function registerStatusCommand(program: Command): void {
           };
           console.log(JSON.stringify(result, null, 2));
         } else {
-          console.log(`Ix Memory: ${health.status}`);
-          console.log(`Endpoint:  ${getEndpoint()}`);
+          renderSection("Status");
+          renderKeyValue("Ix Memory", health.status);
+          renderKeyValue("Endpoint", getEndpoint());
           if (staleInfo) {
-            console.log(`Revision:  ${staleInfo.currentRev}`);
+            renderKeyValue("Revision", String(staleInfo.currentRev));
             if (staleInfo.lastIngestAt) {
               const ago = timeSince(staleInfo.lastIngestAt);
-              console.log(`Last ingest: ${ago}`);
+              renderKeyValue("Last ingest", ago);
             }
             if (staleInfo.staleFiles > 0) {
-              console.log(chalk.yellow(`\n⚠ ${staleInfo.staleFiles} file(s) changed since last ingest:`));
+              renderWarning(`${staleInfo.staleFiles} file(s) changed since last ingest:`);
               for (const f of staleInfo.sampleChangedFiles) {
-                console.log(`  ${chalk.dim(f)}`);
+                console.log(`    ${f}`);
               }
               if (staleInfo.staleFiles > staleInfo.sampleChangedFiles.length) {
-                console.log(chalk.dim(`  ... and ${staleInfo.staleFiles - staleInfo.sampleChangedFiles.length} more`));
+                renderNote(`... and ${staleInfo.staleFiles - staleInfo.sampleChangedFiles.length} more`);
               }
-              console.log(chalk.dim("\nRun ix ingest to update."));
+              renderNote("Run ix ingest to update.");
             } else {
-              console.log(chalk.green("\nGraph is up to date."));
+              renderSuccess("Graph is up to date.");
             }
           }
         }
