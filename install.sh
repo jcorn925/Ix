@@ -212,10 +212,17 @@ else
     curl -fsSL "${GITHUB_RAW}/docker-compose.standalone.yml" -o "$COMPOSE_DIR/docker-compose.yml"
     info "Downloaded docker-compose.yml"
 
-    echo "  Starting backend services (this may take a minute on first run)..."
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --pull always 2>&1 | sed 's/^/  /'
+    printf "  Starting backend services (this may take a minute on first run)..."
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --pull always >/dev/null 2>&1 &
+    DOCKER_PID=$!
+    while kill -0 "$DOCKER_PID" 2>/dev/null; do
+      printf "."
+      sleep 1
+    done
+    wait "$DOCKER_PID" || true
+    echo ""
 
-    echo "  Waiting for services to become healthy..."
+    printf "  Waiting for services to become healthy..."
     for i in $(seq 1 30); do
       if curl -sf "$HEALTH_URL" >/dev/null 2>&1 && curl -sf "$ARANGO_URL" >/dev/null 2>&1; then
         break
