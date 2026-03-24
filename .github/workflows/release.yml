@@ -80,6 +80,10 @@ jobs:
           cache: "npm"
           cache-dependency-path: ix-cli/package-lock.json
 
+      - name: Build core-ingestion
+        working-directory: core-ingestion
+        run: npm ci --silent
+
       - name: Build CLI
         working-directory: ix-cli
         run: |
@@ -93,7 +97,7 @@ jobs:
           STAGING="ix-${{ steps.version.outputs.version }}-linux-amd64"
           mkdir -p "$STAGING/cli" "$STAGING/core-ingestion"
           cp -r ix-cli/dist ix-cli/node_modules ix-cli/package.json "$STAGING/cli/"
-          cp -r core-ingestion/dist "$STAGING/core-ingestion/"
+          cp -r core-ingestion/dist core-ingestion/node_modules core-ingestion/package.json "$STAGING/core-ingestion/"
           cat > "$STAGING/ix" <<'WRAPPER'
           #!/bin/sh
           SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -108,7 +112,7 @@ jobs:
           STAGING="ix-${{ steps.version.outputs.version }}-darwin-amd64"
           mkdir -p "$STAGING/cli" "$STAGING/core-ingestion"
           cp -r ix-cli/dist ix-cli/node_modules ix-cli/package.json "$STAGING/cli/"
-          cp -r core-ingestion/dist "$STAGING/core-ingestion/"
+          cp -r core-ingestion/dist core-ingestion/node_modules core-ingestion/package.json "$STAGING/core-ingestion/"
           cat > "$STAGING/ix" <<'WRAPPER'
           #!/bin/sh
           SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -123,7 +127,7 @@ jobs:
           STAGING="ix-${{ steps.version.outputs.version }}-darwin-arm64"
           mkdir -p "$STAGING/cli" "$STAGING/core-ingestion"
           cp -r ix-cli/dist ix-cli/node_modules ix-cli/package.json "$STAGING/cli/"
-          cp -r core-ingestion/dist "$STAGING/core-ingestion/"
+          cp -r core-ingestion/dist core-ingestion/node_modules core-ingestion/package.json "$STAGING/core-ingestion/"
           cat > "$STAGING/ix" <<'WRAPPER'
           #!/bin/sh
           SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -138,7 +142,7 @@ jobs:
           STAGING="ix-${{ steps.version.outputs.version }}-windows-amd64"
           mkdir -p "$STAGING/cli" "$STAGING/core-ingestion"
           cp -r ix-cli/dist ix-cli/node_modules ix-cli/package.json "$STAGING/cli/"
-          cp -r core-ingestion/dist "$STAGING/core-ingestion/"
+          cp -r core-ingestion/dist core-ingestion/node_modules core-ingestion/package.json "$STAGING/core-ingestion/"
           cat > "$STAGING/ix.cmd" <<'WRAPPER'
           @echo off
           node "%~dp0cli\dist\cli\main.js" %*
