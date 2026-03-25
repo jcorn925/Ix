@@ -52,7 +52,8 @@ class ExpandRoutes(queryApi: GraphQueryApi) {
         }
         preds = body.predicates.map(_.toSet)
         result <- queryApi.expand(nodeId, dir, preds, body.hops.getOrElse(1), body.asOfRev.map(Rev(_)))
-        resp <- Ok(result.asJson)
+        projection <- queryApi.projectExpand(nodeId, dir, preds, body.hops.getOrElse(1), body.asOfRev.map(Rev(_)))
+        resp <- Ok(result.copy(projection = projection).asJson)
       } yield resp).handleErrorWith(ErrorHandler.handle(_))
 
     case req @ POST -> Root / "v1" / "expand-by-name" =>
