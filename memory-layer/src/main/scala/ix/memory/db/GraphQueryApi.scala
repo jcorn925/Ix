@@ -25,6 +25,13 @@ trait GraphQueryApi {
   def resolvePrefix(prefix: String): IO[Vector[NodeId]]
   def getSourceHashes(sourceUris: Seq[String]): IO[Map[String, String]]
   def hasIngestBaseline(): IO[Boolean]
+  def projectExpand(
+    nodeId: NodeId,
+    direction: Direction,
+    predicates: Option[Set[String]] = None,
+    hops: Int = 1,
+    asOfRev: Option[Rev] = None
+  ): IO[Option[ExpandProjection]] = IO.pure(None)
   def expandByName(
     name: String,
     direction: Direction,
@@ -40,10 +47,21 @@ object Direction {
   case object Both extends Direction
 }
 
-final case class ExpandResult(nodes: Vector[GraphNode], edges: Vector[GraphEdge])
+final case class ExpandProjection(
+  kind:  String,
+  nodes: Vector[GraphNode],
+  edges: Vector[GraphEdge]
+)
+
+final case class ExpandResult(
+  nodes:       Vector[GraphNode],
+  edges:       Vector[GraphEdge],
+  projection:  Option[ExpandProjection] = None
+)
 
 object ExpandResult {
   import io.circe.Encoder
   import io.circe.generic.semiauto.deriveEncoder
+  implicit val projectionEncoder: Encoder[ExpandProjection] = deriveEncoder[ExpandProjection]
   implicit val encoder: Encoder[ExpandResult] = deriveEncoder[ExpandResult]
 }
