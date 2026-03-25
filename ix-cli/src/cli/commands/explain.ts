@@ -9,7 +9,7 @@ import { inferRole } from "../explain/role-inference.js";
 import { inferImportance } from "../explain/importance.js";
 import { renderExplanation } from "../explain/render.js";
 import { stderr } from "../stderr.js";
-import chalk from "chalk";
+import { renderSection, renderWarning, renderNote } from "../ui.js";
 
 export function registerExplainCommand(program: Command): void {
   program
@@ -52,29 +52,28 @@ export function registerExplainCommand(program: Command): void {
         console.log(JSON.stringify(output, null, 2));
       } else {
         if (facts.stale) {
-          stderr(chalk.yellow("⚠ Source has changed since last ingest. Run ix ingest to update.\n"));
+          renderWarning("Source has changed since last ingest. Run ix ingest to update.");
         }
 
-        console.log(chalk.bold.underline("\nExplanation"));
+        renderSection("Explanation");
         console.log(`  ${rendered.explanation}`);
 
-        console.log(chalk.bold.underline("\nContext"));
+        renderSection("Context");
         for (const line of rendered.context.split("\n")) {
           console.log(`  ${line}`);
         }
 
         if (rendered.usedBy) {
-          console.log(chalk.bold.underline("\nUsed by"));
+          renderSection("Used by");
           console.log(`  ${rendered.usedBy}`);
         }
 
-        console.log(chalk.bold.underline("\nWhy it matters"));
+        renderSection("Why it matters");
         console.log(`  ${rendered.whyItMatters}`);
 
         if (rendered.notes.length > 0) {
-          console.log(chalk.bold.underline("\nNote"));
           for (const note of rendered.notes) {
-            console.log(`  ${chalk.dim(note)}`);
+            renderNote(note);
           }
         }
         console.log();
@@ -214,7 +213,7 @@ async function rawExplain(
     }
     console.log(JSON.stringify(output, null, 2));
   } else {
-    if (stale) stderr(chalk.yellow("⚠ Source has changed since last ingest. Run ix ingest to update.\n"));
+    if (stale) renderWarning("Source has changed since last ingest. Run ix ingest to update.");
     formatExplain(result, "text");
   }
 }

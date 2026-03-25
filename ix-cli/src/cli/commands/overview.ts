@@ -1,11 +1,11 @@
 import * as nodePath from "node:path";
 import type { Command } from "commander";
-import chalk from "chalk";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint } from "../config.js";
 import { resolveFileOrEntity, printResolved } from "../resolve.js";
 import { getSystemPath, hasMapData } from "../hierarchy.js";
 import { humanizeLabel } from "../impact/risk-semantics.js";
+import { renderSection, renderKeyValue, renderNote, renderBreadcrumb } from "../ui.js";
 
 const CONTAINER_KINDS = new Set(["class", "module", "file", "trait", "object", "interface"]);
 const STRUCTURAL_CONTAINER_KINDS = new Set(["class", "object", "trait", "interface"]);
@@ -83,10 +83,11 @@ function toRepoRelative(filePath: string): string {
 }
 
 function humanizeBreadcrumb(nodes: Array<{ name: string; kind: string }>): string {
-  return nodes.map((n) => {
+  const humanized = nodes.map((n) => {
     if (REGION_KINDS.has(n.kind)) return humanizeLabel(n.name).replace(/ layer$/, "");
     return n.name;
-  }).join(" → ");
+  });
+  return renderBreadcrumb(humanized.map((name) => ({ name })));
 }
 
 /** Label for the "Key ..." section based on target kind. */
@@ -201,15 +202,15 @@ async function overviewContainer(
   renderOverviewHeader(target, displayPath, null, systemPathMapped, hasMap);
 
   if (Object.keys(childrenByKind).length > 0) {
-    console.log(chalk.bold("\nContains"));
+    renderSection("Contains");
     const sorted = Object.entries(childrenByKind).sort((a, b) => b[1] - a[1]);
     for (const [kind, count] of sorted) {
-      console.log(`  ${chalk.dim((kindLabel(kind) + ":").padEnd(22))}${count}`);
+      renderKeyValue(kindLabel(kind), String(count));
     }
   }
 
   if (keyItems.length > 0) {
-    console.log(chalk.bold(`\n${keyItemsLabel(target.kind)}`));
+    renderSection(keyItemsLabel(target.kind));
     for (const item of keyItems) {
       console.log(`  ${item.name}`);
     }
@@ -331,16 +332,16 @@ async function overviewLeaf(
 
   // Nearby structure
   if (siblingsByKind && Object.keys(siblingsByKind).length > 0) {
-    console.log(chalk.bold("\nNearby structure"));
+    renderSection("Nearby structure");
     const sorted = Object.entries(siblingsByKind).sort((a, b) => b[1] - a[1]);
     for (const [kind, count] of sorted) {
-      console.log(`  ${chalk.dim((siblingKindLabel(kind) + ":").padEnd(24))}${count}`);
+      renderKeyValue(siblingKindLabel(kind), String(count));
     }
   }
 
   // Key siblings
   if (keySiblings && keySiblings.length > 0) {
-    console.log(chalk.bold("\nKey siblings"));
+    renderSection("Key siblings");
     for (const s of keySiblings) {
       console.log(`  ${s.name}`);
     }
@@ -358,24 +359,24 @@ function renderOverviewHeader(
   systemPath: Array<{ name: string; kind: string }>,
   hasMap: boolean,
 ): void {
-  console.log(chalk.bold("\nOverview"));
-  console.log(`  ${chalk.dim("Kind:".padEnd(16))}${target.kind}`);
+  renderSection("Overview");
+  renderKeyValue("Kind", target.kind);
   if (displayPath) {
-    console.log(`  ${chalk.dim("File:".padEnd(16))}${displayPath}`);
+    renderKeyValue("File", displayPath);
   }
   if (containedIn) {
     const containerLabel = STRUCTURAL_CONTAINER_KINDS.has(containedIn.kind)
       ? `${containedIn.kind} ${containedIn.name}`
       : containedIn.name;
-    console.log(`  ${chalk.dim("Contained in:".padEnd(16))}${containerLabel}`);
+    renderKeyValue("Contained in", containerLabel);
   }
   if (systemPath.length > 1 && hasMap) {
-    console.log(`  ${chalk.dim("System path:".padEnd(16))}${humanizeBreadcrumb(systemPath)}`);
+    renderKeyValue("System path", humanizeBreadcrumb(systemPath));
   }
 }
 
 function renderDiagnostics(diagnostics: string[]): void {
   for (const d of diagnostics) {
-    console.log(chalk.dim(`\n  ${d}`));
+    renderNote(d);
   }
 }

@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import chalk from "chalk";
+import { renderSection, renderKeyValue, renderNote, renderResolvedHeader, colorizeKind } from "../ui.js";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint } from "../config.js";
 import { resolveFileOrEntity, printResolved } from "../resolve.js";
@@ -62,22 +63,23 @@ function renderRiskHeader(
   risk: RiskSemantics,
   systemPath: SystemPath,
 ): void {
-  console.log(chalk.bold(`Target: ${target.kind} ${target.name}\n`));
+  renderResolvedHeader(target.kind, target.name);
+  console.log();
 
   if (systemPath.length > 1 && hasMapData(systemPath)) {
-    console.log(`  System path: ${chalk.dim(formatSystemPath(systemPath))}`);
+    renderKeyValue("System path", formatSystemPath(systemPath));
   }
 
   // Risk summary — the lead section
   const color = riskColor(risk.riskLevel);
-  console.log(chalk.bold("\nRisk summary"));
+  renderSection("Risk summary");
   console.log(`  ${color(risk.riskSummary)}`);
 
   // At-risk behavior
   if (risk.behaviorAtRisk.length > 0) {
-    console.log(chalk.bold("\nAt-risk behavior"));
+    renderSection("At-risk behavior");
     for (const b of risk.behaviorAtRisk) {
-      console.log(`  ${chalk.white("•")} ${b}`);
+      console.log(`  • ${b}`);
     }
   }
 }
@@ -87,7 +89,7 @@ function renderPropagationBuckets(
   flowPropagation?: { flowName: string; count: number },
 ): void {
   if (propagationBuckets.length === 0 && !flowPropagation) return;
-  console.log(chalk.bold("\nPropagation"));
+  renderSection("Propagation");
 
   // Flow propagation line first
   if (flowPropagation) {
@@ -131,17 +133,17 @@ function renderMostAffected(
   }
 
   if (items.length > 0) {
-    console.log(chalk.bold("\nMost affected"));
+    renderSection("Most affected");
     for (const item of items.slice(0, 3)) {
-      console.log(`  ${chalk.white("•")} ${item}`);
+      console.log(`  • ${item}`);
     }
   }
 }
 
 function renderNextStep(risk: RiskSemantics): void {
   if (risk.nextStep) {
-    console.log(chalk.bold("\nNext"));
-    console.log(`  ${chalk.dim(risk.nextStep)}`);
+    renderSection("Next");
+    renderNote(risk.nextStep);
   }
 }
 
@@ -150,9 +152,9 @@ function renderSupportingContext(
 ): void {
   const entries = Object.entries(counts).filter(([, v]) => v > 0);
   if (entries.length === 0) return;
-  console.log(chalk.bold("\nSupporting context"));
+  renderSection("Supporting context");
   for (const [label, value] of entries) {
-    console.log(`  ${chalk.dim(label.padEnd(24))} ${value}`);
+    renderKeyValue(label.replace(/:$/, ""), String(value));
   }
 }
 
@@ -162,14 +164,14 @@ function renderDecisionsTasksBugs(
   bugs: Array<{ name: string; status: string; severity: string }>,
 ): void {
   if (decisions.length > 0) {
-    console.log(chalk.bold("\nDecisions:"));
+    renderSection("Decisions");
     for (const d of decisions) {
       console.log(`  ${chalk.yellow(d.name)}`);
     }
   }
 
   if (tasks.length > 0) {
-    console.log(chalk.bold("\nTasks:"));
+    renderSection("Tasks");
     for (const t of tasks) {
       const icon = t.status === "done" ? "✓" : "○";
       console.log(`  ${icon} [${t.status}] ${t.name}`);
@@ -177,7 +179,7 @@ function renderDecisionsTasksBugs(
   }
 
   if (bugs.length > 0) {
-    console.log(chalk.bold("\nBugs:"));
+    renderSection("Bugs");
     for (const b of bugs) {
       const icon = b.status === "closed" || b.status === "resolved" ? "✓" : "○";
       console.log(`  ${icon} [${b.status}] ${chalk.red(b.severity)} ${b.name}`);
@@ -359,7 +361,7 @@ async function containerImpact(
     renderDecisionsTasksBugs(decisions, tasks, bugs);
 
     if (diagnostics.length > 0) {
-      console.log(chalk.dim(`\nDiagnostics: ${diagnostics.join("; ")}`));
+      renderNote(`Diagnostics: ${diagnostics.join("; ")}`);
     }
   }
 }
@@ -494,11 +496,11 @@ async function leafImpact(
 
     // 6. Callees (as supporting detail)
     if (calleesResult.nodes.length > 0) {
-      console.log(chalk.bold("\nCalls:"));
+      renderSection("Calls");
       for (const n of calleesResult.nodes) {
         const node = n as any;
         const name = node.name || node.attrs?.name || "(unnamed)";
-        console.log(`  ${chalk.dim((node.kind || "").padEnd(10))} ${name}`);
+        console.log(`  ${colorizeKind(node.kind || "")} ${name}`);
       }
     }
 
