@@ -54,6 +54,16 @@ final case class Region(
   mapRev:          Long
 )
 
+final case class ArchitectureEdge(
+  id:              String,
+  src:             NodeId,
+  dst:             NodeId,
+  level:           Int,
+  weight:          Double,
+  dominantSignal:  String,
+  predicateCounts: Map[String, Int]
+)
+
 // ── Preflight types ──────────────────────────────────────────────────
 
 sealed trait RiskTier { def label: String }
@@ -129,6 +139,7 @@ class MapCapacityException(
 /** The full multi-level architecture map returned by MapService. */
 final case class ArchitectureMap(
   regions:              Vector[Region],
+  edges:                Vector[ArchitectureEdge],
   fileCount:            Int,
   mapRev:               Long,
   preflight:            Option[MapPreflightResult] = None,

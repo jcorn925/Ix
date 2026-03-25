@@ -582,6 +582,110 @@ class MapService(
     if (ranked.nonEmpty) ranked else List("path")
   }
 
+  private def canonicalRegionPair(a: NodeId, b: NodeId): (NodeId, NodeId) =
+    if (a.value.toString <= b.value.toString) (a, b) else (b, a)
+
+  private def signalCategory(predicate: String): String =
+    predicate match {
+      case "CALLS"                 => "calls"
+      case "IMPORTS"               => "imports"
+      case "EXTENDS" | "IMPLEMENTS" => "type"
+      case "PATH"                  => "path"
+      case other                   => other.toLowerCase
+    }
+
+  private def computeArchitectureEdges(
+    regions: Vector[Region],
+    graph:   WeightedFileGraph
+  ): Vector[ArchitectureEdge] = {
+    if (regions.isEmpty || graph.predicatePairs.isEmpty) return Vector.empty
+
+    def buildEdge(
+      idSeed: String,
+      src: NodeId,
+      dst: NodeId,
+      level: Int,
+      predicateCounts: Map[String, Int]
+    ): Option[ArchitectureEdge] = {
+      val signalScores = predicateCounts.toVector
+        .map { case (predicate, count) =>
+          signalCategory(predicate) -> (SignalWeights.getOrElse(predicate, 0.0) * math.log1p(count.toDouble))
+        }
+        .groupBy(_._1)
+        .view
+        .mapValues(_.map(_._2).sum)
+        .toMap
+
+      val weight = signalScores.values.sum
+      if (weight <= 0.0) None
+      else {
+        val dominantSignal = signalScores.toVector
+          .sortBy { case (signal, score) => (-score, signal) }
+          .headOption
+          .map(_._1)
+          .getOrElse("path")
+
+        Some(ArchitectureEdge(
+          id = UUID.nameUUIDFromBytes(idSeed.getBytes("UTF-8")).toString,
+          src = src,
+          dst = dst,
+          level = level,
+          weight = weight,
+          dominantSignal = dominantSignal,
+          predicateCounts = predicateCounts,
+        ))
+      }
+    }
+
+    val fileEdges = graph.predicatePairs.toVector.flatMap { case ((src, dst), predicateCounts) =>
+      buildEdge(
+        idSeed = s"map:file-edge:${src.value}:${dst.value}",
+        src = src,
+        dst = dst,
+        level = 0,
+        predicateCounts = predicateCounts.filter(_._2 > 0),
+      )
+    }
+
+    val fileToRegionByLevel: Map[Int, Map[NodeId, Region]] = regions.groupBy(_.level).view.mapValues { levelRegions =>
+      levelRegions.toVector.flatMap(region =>
+        region.memberFiles.toVector.map(fileId => fileId -> region)
+      ).toMap
+    }.toMap
+
+    val aggregated = scala.collection.mutable.Map.empty[(Int, NodeId, NodeId), scala.collection.mutable.Map[String, Int]]
+
+    for {
+      ((srcFile, dstFile), predicateCounts) <- graph.predicatePairs
+      (level, byFile) <- fileToRegionByLevel
+      srcRegion <- byFile.get(srcFile)
+      dstRegion <- byFile.get(dstFile)
+      if srcRegion.id != dstRegion.id
+    } {
+      val (srcRegionId, dstRegionId) = canonicalRegionPair(srcRegion.id, dstRegion.id)
+      val bucket = aggregated.getOrElseUpdate(
+        (level, srcRegionId, dstRegionId),
+        scala.collection.mutable.Map.empty[String, Int],
+      )
+      predicateCounts.foreach { case (predicate, count) =>
+        bucket.update(predicate, bucket.getOrElse(predicate, 0) + count)
+      }
+    }
+
+    val regionEdges = aggregated.toVector.flatMap { case ((level, src, dst), predicateCountsMut) =>
+      val predicateCounts = predicateCountsMut.toMap.filter(_._2 > 0)
+      buildEdge(
+        idSeed = s"map:region-edge:$level:${src.value}:${dst.value}",
+        src = src,
+        dst = dst,
+        level = level,
+        predicateCounts = predicateCounts,
+      )
+    }
+
+    (regionEdges ++ fileEdges).sortBy(edge => (edge.level, edge.src.value.toString, edge.dst.value.toString))
+  }
+
   // ── Confidence scoring ──────────────────────────────────────────────
 
   private def computeConfidence(
@@ -607,7 +711,8 @@ class MapService(
       graph          = applyPenalty(rawGraph, crosscutScores)
       levels         = LouvainClustering.cluster(graph, maxLevels = 3, minCommunitySize = 3)
       regions        = buildRegions(graph, levels, crosscutScores, inputRev)
-      fresh          = ArchitectureMap(regions, rawGraph.vertices.size, inputRev.value)
+      edges          = computeArchitectureEdges(regions, rawGraph)
+      fresh          = ArchitectureMap(regions, edges, rawGraph.vertices.size, inputRev.value)
       _             <- persistMap(fresh, cached)
     } yield fresh
 
@@ -629,10 +734,18 @@ class MapService(
       )
       decoded = rows.flatMap(decodePersistedRegion(_, inputRev)).toVector
       regions  = rehydrateRelationships(decoded)
-      fileCount <- if (regions.isEmpty) IO.pure(0) else builder.liveFileCount()
+      rawGraphOpt <- if (regions.isEmpty) IO.pure(None) else builder.build().map(Some(_))
     } yield {
       if (regions.isEmpty) None
-      else Some(ArchitectureMap(regions, fileCount, inputRev.value))
+      else {
+        val rawGraph = rawGraphOpt.get
+        Some(ArchitectureMap(
+          regions,
+          computeArchitectureEdges(regions, rawGraph),
+          rawGraph.vertices.size,
+          inputRev.value,
+        ))
+      }
     }
 
   private def decodePersistedRegion(json: Json, inputRev: Rev): Option[Region] = {
