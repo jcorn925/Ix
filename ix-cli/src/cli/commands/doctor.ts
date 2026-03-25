@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import chalk from "chalk";
+import { renderSection, renderSuccess, renderError } from "../ui.js";
 import { IxClient } from "../../client/api.js";
 import { getEndpoint } from "../config.js";
 
@@ -79,7 +80,8 @@ export function registerDoctorCommand(program: Command): void {
         return;
       }
 
-      console.log(chalk.bold("\nIx Doctor\n"));
+      renderSection("Ix Doctor");
+      console.log();
       for (const r of results) {
         const icon = r.ok ? chalk.green("✓") : chalk.red("✗");
         const detail = chalk.dim(` — ${r.detail}`);
@@ -89,9 +91,9 @@ export function registerDoctorCommand(program: Command): void {
       const allOk = results.every((r) => r.ok);
       console.log();
       if (allOk) {
-        console.log(chalk.green("All checks passed."));
+        renderSuccess("All checks passed.");
       } else {
-        console.log(chalk.red("Some checks failed. Run with --format json for details."));
+        renderError("Some checks failed. Run with --format json for details.");
       }
       console.log();
     });

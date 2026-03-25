@@ -5,6 +5,7 @@ import { getEndpoint } from "../config.js";
 import { resolveFileOrEntity, isRawId } from "../resolve.js";
 import { stderr } from "../stderr.js";
 import { buildDependencyTree } from "./depends.js";
+import { renderSection, renderKeyValue, renderResolvedHeader, colorizeKind } from "../ui.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -176,7 +177,7 @@ function renderTraceTree(children: Array<{ name: string; kind?: string; children
 
     const kindStr = child.cycle
       ? chalk.dim((child.kind ?? "").padEnd(10))
-      : chalk.cyan((child.kind ?? "").padEnd(10));
+      : colorizeKind(child.kind ?? "");
     const nameStr = child.cycle
       ? chalk.dim(child.name) + chalk.yellow(" ↺")
       : child.name;
@@ -191,10 +192,6 @@ function renderTraceTree(children: Array<{ name: string; kind?: string; children
   return lines;
 }
 
-
-function printKV(key: string, value: string, indent = "  "): void {
-  console.log(`${indent}${chalk.dim(key + ":")} ${value}`);
-}
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -310,21 +307,21 @@ export function registerTraceCommand(program: Command): void {
           }
 
           // ── Text output ────────────────────────────────────────
-          console.log(chalk.bold("Resolved path"));
-          console.log(chalk.bold("\nTrace"));
-          printKV("From", fromTarget.name);
-          printKV("To  ", toTarget.name);
-          printKV("Kind", cap(relKind));
+          renderResolvedHeader(fromTarget.kind, fromTarget.name);
+          renderSection("Trace");
+          renderKeyValue("From", fromTarget.name);
+          renderKeyValue("To", toTarget.name);
+          renderKeyValue("Kind", cap(relKind));
 
           if (pathNodes.length === 0) {
             console.log(`\nNo route found from ${chalk.bold(fromTarget.name)} to ${chalk.bold(toTarget.name)}.`);
             return;
           }
 
-          console.log(chalk.bold("\nRoute"));
+          renderSection("Route");
           for (let i = 0; i < pathNodes.length; i++) {
             const n = pathNodes[i];
-            const kindStr = chalk.cyan((n.kind ?? "").padEnd(10));
+            const kindStr = colorizeKind(n.kind ?? "");
             if (i === 0) {
               console.log(`  ${kindStr} ${n.name}`);
             } else {
@@ -332,8 +329,8 @@ export function registerTraceCommand(program: Command): void {
             }
           }
 
-          console.log(chalk.bold("\nSummary"));
-          printKV("Path length", String(pathNodes.length));
+          renderSection("Summary");
+          renderKeyValue("Path length", String(pathNodes.length));
           return;
         }
 
@@ -392,13 +389,13 @@ export function registerTraceCommand(program: Command): void {
           }
 
           // ── Text ──────────────────────────────────────────────
-          console.log(`${chalk.bold("Resolved:")} ${target.kind} ${chalk.bold(target.name)}`);
-          console.log(chalk.bold("\nTrace"));
-          printKV("Direction", "Both");
-          printKV("Kind     ", cap(relKind));
+          renderResolvedHeader(target.kind, target.name);
+          renderSection("Trace");
+          renderKeyValue("Direction", "Both");
+          renderKeyValue("Kind", cap(relKind));
 
           // Upstream section (in edges — who depends on this)
-          console.log(chalk.bold("\nUpstream"));
+          renderSection("Upstream");
           console.log(`  ${target.name}`);
           if (upResult.tree.length === 0) {
             console.log(chalk.dim("  (none)"));
@@ -409,7 +406,7 @@ export function registerTraceCommand(program: Command): void {
           }
 
           // Downstream section (out edges — what this depends on)
-          console.log(chalk.bold("\nDownstream"));
+          renderSection("Downstream");
           console.log(`  ${target.name}`);
           if (downResult.tree.length === 0) {
             console.log(chalk.dim("  (none)"));
@@ -421,9 +418,9 @@ export function registerTraceCommand(program: Command): void {
 
           const totalNodes = upResult.nodesVisited + downResult.nodesVisited;
           const maxD = Math.max(upResult.maxDepthReached, downResult.maxDepthReached);
-          console.log(chalk.bold("\nSummary"));
-          printKV("Nodes visited", String(totalNodes));
-          printKV("Max depth    ", String(maxD));
+          renderSection("Summary");
+          renderKeyValue("Nodes visited", String(totalNodes));
+          renderKeyValue("Max depth", String(maxD));
           return;
         }
 
@@ -482,10 +479,10 @@ export function registerTraceCommand(program: Command): void {
         }
 
         // ── Text ────────────────────────────────────────────────────
-        console.log(`${chalk.bold("Resolved:")} ${target.kind} ${chalk.bold(target.name)}`);
-        console.log(chalk.bold("\nTrace"));
-        printKV("Direction", cap(direction));
-        printKV("Kind     ", cap(relKind));
+        renderResolvedHeader(target.kind, target.name);
+        renderSection("Trace");
+        renderKeyValue("Direction", cap(direction));
+        renderKeyValue("Kind", cap(relKind));
 
         if (tree.length === 0) {
           const relDir = doUpstream ? "upstream" : "downstream";
@@ -493,16 +490,16 @@ export function registerTraceCommand(program: Command): void {
           return;
         }
 
-        console.log(chalk.bold("\nPath"));
+        renderSection("Path");
         console.log(`  ${target.name}`);
         for (const line of renderTraceTree(tree, [])) {
           console.log(`  ${line}`);
         }
 
 
-        console.log(chalk.bold("\nSummary"));
-        printKV("Nodes visited", String(nodesVisited));
-        printKV("Max depth    ", String(maxDepthReached));
+        renderSection("Summary");
+        renderKeyValue("Nodes visited", String(nodesVisited));
+        renderKeyValue("Max depth", String(maxDepthReached));
       },
     );
 }

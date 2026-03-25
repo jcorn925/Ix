@@ -6,6 +6,10 @@ import { buildHelpText } from "../help-text.js";
  * This prevents regression where new commands become invisible.
  */
 
+function stripAnsi(s: string): string {
+  return s.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
 const ossHelp = buildHelpText();
 
 const REQUIRED_COMMANDS = [
@@ -30,8 +34,8 @@ describe("help coverage", () => {
   });
 
   it("OSS help uses new branding", () => {
-    expect(ossHelp).toContain("ix — Code Memory CLI");
-    expect(ossHelp).not.toContain("Persistent Memory for LLM Systems");
+    expect(stripAnsi(ossHelp)).toContain("ix — Code Memory CLI");
+    expect(stripAnsi(ossHelp)).not.toContain("Persistent Memory for LLM Systems");
   });
 
   it("OSS help does not show a Pro section", () => {
