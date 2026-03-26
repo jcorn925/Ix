@@ -33,7 +33,8 @@ services:
       ARANGO_PASSWORD: ""
       PORT: "8090"
     depends_on:
-      - arangodb
+      arangodb:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8090/v1/health"]
