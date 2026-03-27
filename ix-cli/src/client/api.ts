@@ -171,7 +171,17 @@ export class IxClient {
   }
 
   async commitPatch(patch: GraphPatchPayload): Promise<PatchCommitResult> {
-    return this.post("/v1/patch", patch);
+    const resp = await fetch(`${this.endpoint}/v1/patch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 min — matches commitPatchBulk
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`${resp.status}: ${text}`);
+    }
+    return resp.json() as Promise<PatchCommitResult>;
   }
 
   async hasIngestBaseline(): Promise<boolean> {
@@ -189,13 +199,31 @@ export class IxClient {
   }
 
   async map(opts?: { full?: boolean }): Promise<any> {
-    return this.post("/v1/map", opts ?? {});
+    const resp = await fetch(`${this.endpoint}/v1/map`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts ?? {}),
+      signal: AbortSignal.timeout(30 * 60 * 1000), // 30 minute timeout
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`${resp.status}: ${text}`);
+    }
+    return resp.json();
   }
 
-  async commitPatchBulk(patches: GraphPatchPayload[]): Promise<{ rev: number }> {
-    const results = await this.commitPatchBatch(patches);
-    const rev = results.reduce((max, r) => Math.max(max, r.rev ?? 0), 0);
-    return { rev };
+  async commitPatchBulk(patches: GraphPatchPayload[]): Promise<PatchCommitResult> {
+    const resp = await fetch(`${this.endpoint}/v1/patches/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patches }),
+      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 min — prevents hang when k8s ingress closes idle connections
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`${resp.status}: ${text}`);
+    }
+    return resp.json() as Promise<PatchCommitResult>;
   }
 
   async runSmells(opts?: {
@@ -234,11 +262,31 @@ export class IxClient {
   }
 
   async reset(): Promise<{ ok: boolean; message: string }> {
-    return this.post("/v1/reset", {});
+    const resp = await fetch(`${this.endpoint}/v1/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(10 * 60 * 1000), // 10 minutes
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`${resp.status}: ${text}`);
+    }
+    return resp.json() as Promise<{ ok: boolean; message: string }>;
   }
 
   async resetCode(): Promise<{ ok: boolean; message: string }> {
-    return this.post("/v1/reset/code", {});
+    const resp = await fetch(`${this.endpoint}/v1/reset/code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(10 * 60 * 1000), // 10 minutes
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`${resp.status}: ${text}`);
+    }
+    return resp.json() as Promise<{ ok: boolean; message: string }>;
   }
 
   async stats(): Promise<any> {

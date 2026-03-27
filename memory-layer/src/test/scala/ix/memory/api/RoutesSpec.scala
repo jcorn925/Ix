@@ -17,7 +17,6 @@ import ix.memory.TestDbHelper
 import ix.memory.conflict.ConflictService
 import ix.memory.context._
 import ix.memory.db._
-import ix.memory.ingestion._
 import ix.memory.map.MapService
 import ix.memory.model._
 import ix.memory.smell.SmellService
@@ -65,18 +64,13 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestD
       new ConfidenceScorerImpl(),
       new ConflictDetectorImpl()
     )
-    val parserRouter         = new ParserRouter()
-    val ingestionService     = new IngestionService(parserRouter, writeApi, queryApi)
     val bulkWriteApi         = new BulkWriteApi(client)
-    val bulkIngestionService = new BulkIngestionService(parserRouter, bulkWriteApi, queryApi)
     val mapService           = new MapService(client, queryApi, writeApi)
     val smellService         = new SmellService(client, writeApi)
     val subsystemService     = new SubsystemScoringService(client, writeApi, mapService)
 
     Routes.all(
       contextService,
-      ingestionService,
-      bulkIngestionService,
       queryApi,
       writeApi,
       conflictService,
@@ -217,6 +211,38 @@ class RoutesSpec extends AsyncFlatSpec with AsyncIOSpec with Matchers with TestD
       } yield {
         resp.status shouldBe Status.Ok
         body.hcursor.downField("entityId").as[String] shouldBe Right(nodeId.value.toString)
+      }
+    }
+  }
+
+  it should "return provenance chain for entity after bulk commit" in {
+    clientResource.use { client =>
+      val writeApi     = new ArangoGraphWriteApi(client)
+      val queryApi     = new ArangoGraphQueryApi(client)
+      val bulkWriteApi = new BulkWriteApi(client)
+      val app          = buildRoutes(client, writeApi, queryApi)
+      val nodeId       = NodeId(UUID.randomUUID())
+      val patch        = makePatch(ops = Vector(PatchOp.UpsertNode(nodeId, NodeKind.Function, "bulk_prov_func", Map.empty[String, Json])))
+      val provenance   = new java.util.HashMap[String, AnyRef]()
+      provenance.put("source_uri", patch.source.uri)
+      provenance.put("source_hash", patch.source.sourceHash.orNull)
+      provenance.put("extractor", patch.source.extractor)
+      provenance.put("source_type", patch.source.sourceType.asJson.asString.getOrElse("code"))
+      provenance.put("observed_at", patch.timestamp.toString)
+
+      for {
+        _    <- client.ensureSchema()
+        _    <- cleanDatabase(client)
+        _    <- bulkWriteApi.commitBatchChunked(
+                  Vector(FileBatch(patch.source.uri, patch.source.sourceHash, patch, provenance)),
+                  baseRev = 0L
+                )
+        resp <- app.run(Request[IO](Method.POST, Uri.unsafeFromString(s"/v1/provenance/${nodeId.value}")))
+        body <- resp.as[Json]
+      } yield {
+        resp.status shouldBe Status.Ok
+        body.hcursor.downField("entityId").as[String] shouldBe Right(nodeId.value.toString)
+        body.hcursor.downField("chain").focus.flatMap(_.asArray).exists(_.nonEmpty) shouldBe true
       }
     }
   }

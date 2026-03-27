@@ -19,7 +19,7 @@ class MapServiceScopeSpec extends AnyFlatSpec with Matchers {
 
     val map = ArchitectureMap(
       regions = Vector(context, apiSubsystem, apiModule, apiClient),
-      edges = Vector.empty,
+
       fileCount = 257,
       mapRev = 42L
     )
@@ -39,7 +39,7 @@ class MapServiceScopeSpec extends AnyFlatSpec with Matchers {
 
     val map = ArchitectureMap(
       regions = Vector(system, subsystem, moduleA, moduleB, moduleC),
-      edges = Vector.empty,
+
       fileCount = 140,
       mapRev = 42L
     )
@@ -54,6 +54,24 @@ class MapServiceScopeSpec extends AnyFlatSpec with Matchers {
     view.summary.crossCutting shouldBe 1
   }
 
+  "collapseDuplicateHierarchyLevels" should "keep only the coarsest region for repeated member sets" in {
+    val sharedId = NodeId(UUID.randomUUID())
+    val sharedFiles = (1 to 10).map(_ => NodeId(UUID.randomUUID())).toSet
+    val child = region("Edges / Resolver", "module", 1, files = 4, parentId = Some(sharedId))
+    val module = regionWithMembers("Edges", "module", 1, sharedId, sharedFiles)
+    val subsystem = regionWithMembers("Edges", "subsystem", 2, sharedId, sharedFiles)
+    val system = regionWithMembers("Edges", "system", 3, sharedId, sharedFiles)
+
+    val collapsed = service.collapseDuplicateHierarchyLevels(Vector(child, module, subsystem, system))
+
+    collapsed.map(region => region.label -> region.labelKind) shouldBe Vector(
+      "Edges / Resolver" -> "module",
+      "Edges" -> "system"
+    )
+    collapsed.map(_.id) should contain (sharedId)
+    collapsed.find(_.label == "Edges / Resolver").flatMap(_.parentId) shouldBe Some(sharedId)
+  }
+
   private def region(
     label: String,
     labelKind: String,
@@ -62,9 +80,21 @@ class MapServiceScopeSpec extends AnyFlatSpec with Matchers {
     confidence: Double = 0.80,
     crosscut: Double = 0.0,
     parent: Option[Region] = None,
+    parentId: Option[NodeId] = None,
   ): Region = {
-    val id = NodeId(UUID.randomUUID())
-    val memberFiles = (1 to files).map(_ => NodeId(UUID.randomUUID())).toSet
+    regionWithMembers(label, labelKind, level, NodeId(UUID.randomUUID()), (1 to files).map(_ => NodeId(UUID.randomUUID())).toSet, confidence, crosscut, parent.map(_.id).orElse(parentId))
+  }
+
+  private def regionWithMembers(
+    label: String,
+    labelKind: String,
+    level: Int,
+    id: NodeId,
+    memberFiles: Set[NodeId],
+    confidence: Double = 0.80,
+    crosscut: Double = 0.0,
+    parentId: Option[NodeId] = None,
+  ): Region = {
     Region(
       id = id,
       label = label,
@@ -72,7 +102,7 @@ class MapServiceScopeSpec extends AnyFlatSpec with Matchers {
       level = level,
       memberFiles = memberFiles,
       childRegionIds = Set.empty,
-      parentId = parent.map(_.id),
+      parentId = parentId,
       cohesion = 0.5,
       externalCoupling = 0.2,
       boundaryRatio = 1.5,
