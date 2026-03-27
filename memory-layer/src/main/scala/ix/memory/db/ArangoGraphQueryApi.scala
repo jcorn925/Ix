@@ -14,6 +14,23 @@ import ix.memory.model._
 class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
 
   private val log = LoggerFactory.getLogger(classOf[ArangoGraphQueryApi])
+  private val SymbolProjectionKinds = Vector(
+    NodeKind.Function,
+    NodeKind.Method,
+    NodeKind.Class,
+    NodeKind.Interface,
+    NodeKind.Trait,
+    NodeKind.Object,
+    NodeKind.Variable,
+  )
+  private val SymbolProjectionPredicates = Set(
+    "CONTAINS",
+    "CALLS",
+    "IMPORTS",
+    "REFERENCES",
+    "EXTENDS",
+    "IMPLEMENTS",
+  )
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -270,6 +287,24 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
 
     } yield ExpandResult(nodes, allEdges)
   }
+
+  override def projectExpand(
+    nodeId: NodeId,
+    direction: Direction,
+    predicates: Option[Set[String]] = None,
+    hops: Int = 1,
+    asOfRev: Option[Rev] = None
+  ): IO[Option[ExpandProjection]] =
+    for {
+      resolvedRev <- asOfRev.fold(getLatestRev)(IO.pure)
+      originOpt   <- getNode(nodeId, Some(resolvedRev))
+      projection  <- originOpt match {
+        case Some(origin) if origin.kind == NodeKind.File =>
+          buildFileSymbolProjection(origin, resolvedRev, predicates)
+        case _ =>
+          IO.pure(None)
+      }
+    } yield projection
 
   override def getClaims(entityId: NodeId): IO[Vector[Claim]] =
     client.query(
@@ -536,6 +571,66 @@ class ArangoGraphQueryApi(client: ArangoClient) extends GraphQueryApi {
                  ).map(_.flatMap(parseNode).toVector)
                }
     } yield ExpandResult(nodes, allEdges)
+  }
+
+  private def buildFileSymbolProjection(
+    fileNode:    GraphNode,
+    rev:         Rev,
+    predicates:  Option[Set[String]]
+  ): IO[Option[ExpandProjection]] = {
+    val activePredicates = predicates
+      .map(_.intersect(SymbolProjectionPredicates))
+      .getOrElse(SymbolProjectionPredicates)
+
+    val kindList = new java.util.ArrayList[String](SymbolProjectionKinds.size)
+    SymbolProjectionKinds.foreach(kind => kindList.add(nodeKindToString(kind)))
+
+    val symbolNodeQuery =
+      """FOR n IN nodes
+        |  FILTER n.provenance.source_uri == @sourceUri
+        |    AND n.kind IN @symbolKinds
+        |    AND n.created_rev <= @rev
+        |    AND (n.deleted_rev == null OR @rev < n.deleted_rev)
+        |  SORT TO_NUMBER(n.attrs.line_start), TO_NUMBER(n.attrs.line_end), n.name ASC
+        |  RETURN n""".stripMargin
+
+    for {
+      symbolRows <- client.query(
+        symbolNodeQuery,
+        Map(
+          "sourceUri"   -> fileNode.provenance.sourceUri.asInstanceOf[AnyRef],
+          "symbolKinds" -> kindList.asInstanceOf[AnyRef],
+          "rev"         -> Long.box(rev.value).asInstanceOf[AnyRef],
+        ),
+      )
+      symbolNodes = symbolRows.flatMap(parseNode).toVector
+      edgeRows <- if (symbolNodes.isEmpty || activePredicates.isEmpty) IO.pure(Vector.empty[Json])
+                  else {
+                    val idList = new java.util.ArrayList[String](symbolNodes.size)
+                    symbolNodes.foreach(node => idList.add(node.id.value.toString))
+                    val predicateList = new java.util.ArrayList[String](activePredicates.size)
+                    activePredicates.toVector.sorted.foreach(predicateList.add)
+                    client.query(
+                      """FOR e IN edges
+                        |  FILTER e.src IN @ids
+                        |    AND e.dst IN @ids
+                        |    AND e.predicate IN @predicates
+                        |    AND e.created_rev <= @rev
+                        |    AND (e.deleted_rev == null OR @rev < e.deleted_rev)
+                        |  RETURN e""".stripMargin,
+                      Map(
+                        "ids"        -> idList.asInstanceOf[AnyRef],
+                        "predicates" -> predicateList.asInstanceOf[AnyRef],
+                        "rev"        -> Long.box(rev.value).asInstanceOf[AnyRef],
+                      ),
+                    )
+                  }
+      symbolEdges = edgeRows.flatMap(parseEdge).toVector
+    } yield Some(ExpandProjection(
+      kind = "symbol_graph",
+      nodes = symbolNodes,
+      edges = symbolEdges,
+    ))
   }
 
   // ── JSON Parsers (snake_case → camelCase) ───────────────────────────

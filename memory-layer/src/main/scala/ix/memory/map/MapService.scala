@@ -596,6 +596,18 @@ class MapService(
     if (ranked.nonEmpty) ranked else List("path")
   }
 
+  private def canonicalRegionPair(a: NodeId, b: NodeId): (NodeId, NodeId) =
+    if (a.value.toString <= b.value.toString) (a, b) else (b, a)
+
+  private def signalCategory(predicate: String): String =
+    predicate match {
+      case "CALLS"                 => "calls"
+      case "IMPORTS"               => "imports"
+      case "EXTENDS" | "IMPLEMENTS" => "type"
+      case "PATH"                  => "path"
+      case other                   => other.toLowerCase
+    }
+
   // ── Confidence scoring ──────────────────────────────────────────────
 
   private def computeConfidence(
