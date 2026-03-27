@@ -3,6 +3,7 @@ package ix.memory.db
 import scala.concurrent.duration._
 
 import cats.effect.{IO, Resource}
+import cats.syntax.traverse._
 import com.arangodb.{ArangoDB, ArangoDatabase}
 import com.arangodb.entity.MultiDocumentEntity
 import com.arangodb.model.{AqlQueryOptions, DocumentCreateOptions, OverwriteMode, StreamTransactionOptions}
@@ -38,14 +39,7 @@ class ArangoClient private (db: ArangoDatabase) {
     IO.blocking {
       val cursor = db.query(aql, classOf[AnyRef], asJava(bindVars), queryOptions(txId))
       cursor.asListRemaining().asScala.toList
-    }.flatMap { values =>
-      values.foldLeft(IO.pure(List.empty[Json])) { (accIO, value) =>
-        for {
-          acc <- accIO
-          json <- toJson(value)
-        } yield acc :+ json
-      }
-    }
+    }.flatMap(_.traverse(toJson))
 
   def queryOne(
     aql: String,
