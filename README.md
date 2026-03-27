@@ -2,7 +2,7 @@
   <img src="./assets/logo.png" width="40%" />
 </p>
 
-<h1 align="center">Understand any system instantly.</h1>
+<h1 align="center">Understand any codebase instantly.</h1>
 <p align="center"><em>Your virtual cartographer.</em></p>
 
 <p align="center">
@@ -36,6 +36,9 @@
 <br/>
 
 ## Problem
+Running out of tokens while developing?
+Not anymore...
+
 
 Software systems are too complex to understand.
 
