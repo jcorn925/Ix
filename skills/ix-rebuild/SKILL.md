@@ -5,7 +5,7 @@ description: Use when running or recovering from a full ix rebuild — sbt assem
 
 # Ix Rebuild
 
-Use this when running `./rebuild.sh` or fixing compile errors after merging changes.
+Use this when running `./scripts/dev/rebuild.sh` or fixing compile errors after merging changes.
 
 ## Build Order
 
@@ -13,7 +13,7 @@ Use this when running `./rebuild.sh` or fixing compile errors after merging chan
 sbt assembly (Scala backend)  →  npm run build (TypeScript CLI)  →  Docker restart
 ```
 
-`./rebuild.sh` runs all three. For faster iteration use the individual steps below.
+`./scripts/dev/rebuild.sh` runs all three. For faster iteration use the individual steps below.
 
 ## Fast Iteration Commands
 
@@ -28,7 +28,7 @@ sbt assembly 2>&1 | grep -E "error|warning|success|Built"
 cd ix-cli && npm run build 2>&1 | grep -E "error TS|error:"
 
 # Both + Docker restart
-./rebuild.sh
+./scripts/dev/rebuild.sh
 ```
 
 ## Common Scala Errors and Fixes
@@ -107,5 +107,5 @@ ix subsystems --format json | head -5  # subsystem pipeline works
 
 - `sbt "memoryLayer/compile"` exits with `[success]`.
 - `cd ix-cli && npm run build` exits cleanly (no `error TS` lines).
-- `./rebuild.sh` prints `IX backend is ready!`.
+- `./scripts/dev/rebuild.sh` prints `IX backend is ready!`.
 - `ix status` reports `ok`.
