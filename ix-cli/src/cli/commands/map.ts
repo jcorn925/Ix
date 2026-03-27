@@ -188,7 +188,8 @@ Examples:
       }
 
       if (opts.format !== "json") {
-        process.stderr.write(chalk.dim(`  ingest ${ingestMs}ms · map ${mapMs}ms\n`));
+        const mapSec = (mapMs / 1000).toFixed(1);
+        process.stderr.write(chalk.dim(`  Mapped in ${mapSec}s\n`));
       }
 
       const minConf = parseFloat(opts.minConfidence ?? "0");
