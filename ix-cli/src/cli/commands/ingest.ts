@@ -422,6 +422,7 @@ export async function ingestFiles(
     edges: number,
     claims: number,
   ): void => {
+    if (!debug) return;
     process.stderr.write(
       `\n[ingest-save] files=${files} resolveEdgesMs=${resolveEdgesMs} buildPatchMs=${buildPatchMs}` +
       (mapMode ? ` stripChunkOpsMs=${stripMs}` : '') +
@@ -613,7 +614,9 @@ export async function ingestFiles(
                 patchesApplied++;
               } catch (commitErr) {
                 parseErrors++;
-                process.stderr.write(`\n  [commit error] ${item.patch.source?.uri}: ${commitErr}\n`);
+                const errMsg = String(commitErr);
+                const truncated = errMsg.length > 200 ? errMsg.slice(0, 200) + '…' : errMsg;
+                process.stderr.write(`\n  [commit error] ${item.patch.source?.uri}: ${truncated}\n`);
               }
             }
           } finally {
