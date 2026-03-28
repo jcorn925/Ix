@@ -13,7 +13,7 @@
 ```bash
 git clone https://github.com/ix-infrastructure/Ix.git
 cd Ix
-./setup.sh
+./scripts/dev/setup.sh
 ```
 
 This installs dependencies, builds the CLI and backend, and starts Docker services.
@@ -46,7 +46,7 @@ cd ix-cli && npm test
 cd .. && sbt memoryLayer/test
 
 # Smoke test (full stack)
-./ix-smoke-test.sh
+./scripts/dev/ix-smoke-test.sh
 ```
 
 ## Development Workflow
@@ -91,7 +91,7 @@ Breaking changes: use `feat!:` or `fix!:` prefix.
 |---|---|
 | CLI code | `cd ix-cli && npm test` |
 | Backend code | `sbt memoryLayer/test` |
-| CLI behavior | `./ix-smoke-test.sh` |
+| CLI behavior | `./scripts/dev/ix-smoke-test.sh` |
 | Any change | Full test suite before opening PR |
 
 Run smoke tests for any CLI-facing change. Run backend tests for any Scala change.
