@@ -107,11 +107,14 @@ jobs:
 
       # ── 3b. Build System Compass (optional — needs COMPASS_TOKEN secret) ─
       - name: Build System Compass
-        if: ${{ secrets.COMPASS_TOKEN != '' }}
         continue-on-error: true
         env:
           COMPASS_TOKEN: ${{ secrets.COMPASS_TOKEN }}
         run: |
+          if [ -z "$COMPASS_TOKEN" ]; then
+            echo "COMPASS_TOKEN not set — skipping compass build"
+            exit 0
+          fi
           git clone https://x-access-token:${COMPASS_TOKEN}@github.com/ix-infrastructure/system-compass.git
           cd system-compass
           npm ci --silent
