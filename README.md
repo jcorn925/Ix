@@ -128,7 +128,7 @@ Map → Explain → Trace → Impact
 
 ## Why Ix
 
-Modern systems are not just complex — they are constantly changing.
+Modern systems are not just complex — they're constantly changing.
 
 Every time you switch context, onboard to a new service, or debug a flow, you start from zero.
 
