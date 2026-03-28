@@ -29,7 +29,7 @@ class BulkWriteApi(client: ArangoClient) {
   private val MaxNodeDocs  = 10000
   private val MaxEdgeDocs  = 20000
   private val MaxClaimDocs = 10000
-  private val MaxPatchDocs = 250
+  private val MaxPatchDocs = 500
   private val SlowChunkMs = 2000L
   private val debugBulkWrites = sys.env.get("IX_DEBUG").exists(v => v.nonEmpty && v != "0" && !v.equalsIgnoreCase("false"))
   private val logger: Logger[IO] = Slf4jLogger.getLoggerFromName[IO]("ix.bulk-write")
@@ -326,11 +326,18 @@ case class FileBatch(
     result
   }
 
-  private def nodeKindToString(nk: NodeKind): String =
-    nk.asJson.asString.getOrElse(nk.toString)
-
-  lazy val estimatedPayloadBytes: Int =
-    patch.asJson.noSpaces.getBytes(StandardCharsets.UTF_8).length + 1024
+  /** Heuristic payload estimate — avoids full Circe serialization round-trip.
+   *  ~200 bytes per node op, ~180 per edge op, ~150 per claim op, +1KB overhead. */
+  lazy val estimatedPayloadBytes: Int = {
+    var nodes = 0; var edges = 0; var claims = 0
+    patch.ops.foreach {
+      case _: PatchOp.UpsertNode  => nodes += 1
+      case _: PatchOp.UpsertEdge  => edges += 1
+      case _: PatchOp.AssertClaim => claims += 1
+      case _ => ()
+    }
+    nodes * 200 + edges * 180 + claims * 150 + 1024
+  }
 
   def nodeDocuments(rev: Long): Vector[java.util.Map[String, AnyRef]] = {
     val now = Instant.now().toString
@@ -340,7 +347,7 @@ case class FileBatch(
       doc.put("_key", s"${logicalId}_${rev}")
       doc.put("logical_id", logicalId)
       doc.put("id", logicalId)
-      doc.put("kind", nodeKindToString(kind))
+      doc.put("kind", NodeKind.toWireString(kind))
       doc.put("name", name)
       doc.put("attrs", attrsToJavaMap(attrs))
       doc.put("provenance", provenance)
