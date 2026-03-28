@@ -202,6 +202,19 @@ function stripChunkOps(patch: GraphPatchPayload): GraphPatchPayload {
   };
 }
 
+/** Strip chunks and claims from patches — mapMode only needs nodes + edges. */
+function stripMapModeOps(patch: GraphPatchPayload): GraphPatchPayload {
+  return {
+    ...patch,
+    ops: patch.ops.filter(op => {
+      if (op.type === 'AssertClaim' || op.type === 'RetractClaim') return false;
+      if (op.type === 'UpsertNode' && op['kind'] === 'chunk') return false;
+      if (op.type === 'UpsertEdge' && (op['predicate'] === 'CONTAINS_CHUNK' || op['predicate'] === 'NEXT')) return false;
+      return true;
+    }),
+  };
+}
+
 const COMMIT_CONFLICT_RETRY_PATTERNS = [
   'write-write conflict',
   'timeout waiting to lock key',
@@ -422,6 +435,7 @@ export async function ingestFiles(
     edges: number,
     claims: number,
   ): void => {
+    if (!debug) return;
     process.stderr.write(
       `\n[ingest-save] files=${files} resolveEdgesMs=${resolveEdgesMs} buildPatchMs=${buildPatchMs}` +
       (mapMode ? ` stripChunkOpsMs=${stripMs}` : '') +
@@ -527,7 +541,7 @@ export async function ingestFiles(
     const PARSE_STREAM_CHUNK     = 1000;             // streaming batch size for large repos
     const SMALL_REPO_THRESHOLD   = 5_000;            // parse-all-first below this; streaming above
     const COMMIT_HTTP_MAX_FILES  = parsePositiveIntEnv('IX_COMMIT_HTTP_MAX_FILES', 200); // files per HTTP request to the backend
-    const COMMIT_CONCURRENCY     = parsePositiveIntEnv('IX_COMMIT_CONCURRENCY', mapMode ? 2 : 4); // parallel HTTP save requests
+    const COMMIT_CONCURRENCY     = parsePositiveIntEnv('IX_COMMIT_CONCURRENCY', 8); // parallel HTTP save requests
     const COMMIT_CONFLICT_RETRIES = parsePositiveIntEnv('IX_COMMIT_CONFLICT_RETRIES', 6); // retry transient Arango lock conflicts
     const YIELD_EVERY            = 100;              // yield event loop every N files during parse
 
@@ -613,7 +627,11 @@ export async function ingestFiles(
                 patchesApplied++;
               } catch (commitErr) {
                 parseErrors++;
-                process.stderr.write(`\n  [commit error] ${item.patch.source?.uri}: ${commitErr}\n`);
+                if (debug) {
+                  const errMsg = String(commitErr);
+                  const truncated = errMsg.length > 200 ? errMsg.slice(0, 200) + '…' : errMsg;
+                  process.stderr.write(`\n  [commit error] ${item.patch.source?.uri}: ${truncated}\n`);
+                }
               }
             }
           } finally {
@@ -673,7 +691,8 @@ export async function ingestFiles(
         for (let j = 0; j < batch.length; j++) {
           const { parsed: p, hash, previousHash } = batch[j];
           try {
-            const patch = buildPatchFn!(p, hash, batchEdgesByFile.get(p.filePath) ?? emptyEdges, previousHash);
+            let patch = buildPatchFn!(p, hash, batchEdgesByFile.get(p.filePath) ?? emptyEdges, previousHash);
+            if (mapMode) patch = stripMapModeOps(patch);
             preparedPatches.push(makePreparedPatch(patch, j + 1, p.filePath));
           } catch (err) {
             parseErrors++;
@@ -738,7 +757,8 @@ export async function ingestFiles(
         for (let j = 0; j < allParsed.length; j++) {
           const { parsed: p, hash, previousHash } = allParsed[j];
           try {
-            const patch = buildPatchFn!(p, hash, edgesByFile.get(p.filePath) ?? emptyEdges, previousHash);
+            let patch = buildPatchFn!(p, hash, edgesByFile.get(p.filePath) ?? emptyEdges, previousHash);
+            if (mapMode) patch = stripMapModeOps(patch);
             preparedPatches.push(makePreparedPatch(patch, j + 1, p.filePath));
           } catch (err) {
             parseErrors++;
@@ -849,20 +869,24 @@ export async function ingestFiles(
       progressTotal   = filePaths.length;
       progressCurrent = 0;
 
-      // Pipeline overlap: parse next chunk in worker pool while committing current chunk
+      // Pipeline overlap: parse next chunk in worker pool while committing current chunk.
+      // Each file is dispatched to the parse pool immediately after it is read so workers
+      // start processing as soon as the first file in the chunk is ready rather than
+      // waiting for all reads in the chunk to complete.
       let pendingFlush: Promise<void> = Promise.resolve();
       for (let i = 0; i < filePaths.length; i += PARSE_STREAM_CHUNK) {
         const chunk = filePaths.slice(i, i + PARSE_STREAM_CHUNK);
         type FileData = { filePath: string; source: string; hash: string; previousHash: string | undefined } | null;
         const fileData: FileData[] = [];
+        const parsePromises: Promise<unknown>[] = [];
         for (const filePath of chunk) {
           try {
             const fileSize = fs.statSync(filePath).size;
-            if (fileSize === 0) { filesSkipped++; fileData.push(null); continue; }
-            if (fileSize > MAX_FILE_BYTES) { tooLarge++; fileData.push(null); continue; }
+            if (fileSize === 0) { filesSkipped++; fileData.push(null); parsePromises.push(Promise.resolve(null)); continue; }
+            if (fileSize > MAX_FILE_BYTES) { tooLarge++; fileData.push(null); parsePromises.push(Promise.resolve(null)); continue; }
             const bytes = fs.readFileSync(filePath);
             const hash = sha256(bytes);
-            if (!opts.force && knownHashes.get(filePath) === hash) { filesSkipped++; fileData.push(null); continue; }
+            if (!opts.force && knownHashes.get(filePath) === hash) { filesSkipped++; fileData.push(null); parsePromises.push(Promise.resolve(null)); continue; }
             const previousHash = knownHashes.get(filePath);
             const sourceText = bytes.toString('utf-8');
             if (isLikelyMinifiedSource(sourceText)) {
@@ -870,22 +894,20 @@ export async function ingestFiles(
               filesSkipped++;
               if (debug) process.stderr.write(`\n  [skip minified-likely] ${filePath}\n`);
               fileData.push(null);
+              parsePromises.push(Promise.resolve(null));
               continue;
             }
-            fileData.push({ filePath, source: sourceText, hash, previousHash: previousHash !== hash ? previousHash : undefined });
+            const fd: NonNullable<FileData> = { filePath, source: sourceText, hash, previousHash: previousHash !== hash ? previousHash : undefined };
+            fileData.push(fd);
+            parsePromises.push(pool.parse(fd.filePath, fd.source).then(r => { progressCurrent++; return r; }));
           } catch (err) {
             parseErrors++;
             fileData.push(null);
+            parsePromises.push(Promise.resolve(null));
             process.stderr.write(`\n  [read error] ${filePath}: ${err}\n`);
           }
         }
-        const parseResults = await Promise.all(
-          fileData.map(f =>
-            f
-              ? pool.parse(f.filePath, f.source).then(r => { progressCurrent++; return r; })
-              : Promise.resolve(null),
-          ),
-        );
+        const parseResults = await Promise.all(parsePromises);
         const batch: ParsedFile[] = [];
         for (let j = 0; j < fileData.length; j++) {
           const f = fileData[j];
