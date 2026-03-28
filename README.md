@@ -77,6 +77,12 @@ Directed context. More signal. Persistent system memory.
 ```bash
 curl -fsSL https://ix-infra.com/install.sh | sh
 ```
+### Claude Plugin
+``` bash
+/plugin marketplace add ix-infrastructure/ix-claude-plugin
+/plugin install ix-memory
+/reload-plugin
+```
 
 ## Requirements
 
