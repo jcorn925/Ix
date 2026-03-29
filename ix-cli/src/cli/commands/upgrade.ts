@@ -117,8 +117,12 @@ export async function checkForUpdate(): Promise<void> {
   const cache = readCache();
 
   if (cache && Date.now() - cache.checkedAt < 3600_000) {
-    if (isNewer(cache.latest, current)) {
-      printUpdateNotice(current, cache.latest);
+    const hasCliUpdate = isNewer(cache.latest, current);
+    const compassCurrent = getCompassVersion();
+    const hasCompassUpdate =
+      cache.compassLatest && isNewer(cache.compassLatest, compassCurrent);
+    if (hasCliUpdate || hasCompassUpdate) {
+      printUpdateNotice(current, cache.latest, !!hasCompassUpdate);
     }
     return;
   }
