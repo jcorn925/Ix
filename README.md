@@ -66,8 +66,8 @@ Ix improves how AI systems reason about your codebase.
 
 ## Results
 
-**30% fewer tokens** on development tasks  
-**43% increase in daily LLM usage**  
+**30-99.7% fewer tokens** on development tasks  
+**Minimum of 43% increase in daily LLM usage**  
 **Understand systems in minutes, not hours**
 
 Directed context. More signal. Persistent system memory.
