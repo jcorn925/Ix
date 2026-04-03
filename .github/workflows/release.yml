@@ -222,5 +222,5 @@ jobs:
           git checkout -b "$BRANCH"
           git add homebrew/ix.rb
           git commit -m "brew: update formula for v${VERSION}" || exit 0
-          git push origin "$BRANCH"
-          gh pr create --title "brew: update formula for v${VERSION}" --body "Auto-generated: updates Homebrew formula SHA for v${VERSION}" --base main
+          git push --force-with-lease origin "$BRANCH"
+          gh pr create --title "brew: update formula for v${VERSION}" --body "Auto-generated: updates Homebrew formula SHA for v${VERSION}" --base main || true
