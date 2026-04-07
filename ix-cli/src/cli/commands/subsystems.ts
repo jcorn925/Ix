@@ -104,6 +104,10 @@ Examples:
         let result: any;
         try {
           result = await client.listSubsystems();
+          // Auto-trigger scoring if no persisted scores exist yet
+          if ((result.scores ?? []).length === 0) {
+            result = await client.scoreSubsystems();
+          }
         } catch (err: any) {
           console.error(chalk.red("Error:"), err.message);
           process.exitCode = 1;
@@ -163,6 +167,9 @@ Examples:
         let scoreResult: { scores?: SubsystemScore[] };
         try {
           scoreResult = await client.listSubsystems();
+          if ((scoreResult.scores ?? []).length === 0) {
+            scoreResult = await client.scoreSubsystems();
+          }
         } catch (err: any) {
           console.error(chalk.red("Error:"), err.message);
           process.exitCode = 1;
@@ -426,9 +433,11 @@ function compactMapResult(result: any): any {
 function compactRegion(r: any): any {
   const out: any = {
     label: r.label,
+    label_kind: r.label_kind,
     level: r.level,
     files: r.file_count,
     children: r.child_region_count,
+    parent_id: r.parent_id ?? null,
     cohesion: roundFloat(r.cohesion),
     coupling: roundFloat(r.external_coupling),
     boundary: roundFloat(r.boundary_ratio),
