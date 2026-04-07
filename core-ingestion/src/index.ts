@@ -312,7 +312,7 @@ function parseYamlFile(filePath: string, source: string): FileParseResult {
   const lineStarts = computeLineStarts(source);
   const lines = source.split(/\r?\n/);
   const stack: Array<{ indent: number; key: string }> = [];
-  const keyLinePattern = /^(\s*)(?:-\s+)?([A-Za-z0-9_.-]+)\s*:(?:\s*.*)?$/;
+  const keyLinePattern = /^(\s*)(?:-\s+)?([A-Za-z0-9_.-]+)\s*:.*$/;
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
@@ -853,7 +853,7 @@ function parseDockerfileFile(filePath: string, source: string): FileParseResult 
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    const trimmedEnd = line.replace(/\s+$/, '');
+    const trimmedEnd = line.trimEnd();
     const lineContent = pending ? `${pending}\n${line}` : line;
     if (!pending) logicalStartLine = index + 1;
 
@@ -890,10 +890,20 @@ function parseDockerfileFile(filePath: string, source: string): FileParseResult 
 
 /** Strip -- line comments and /* block comments *\/ from SQL source. */
 function stripSqlComments(source: string): string {
-  // Block comments first, then line comments
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '))
-    .replace(/--[^\n]*/g, match => ' '.repeat(match.length));
+  // Block comments: use indexOf to avoid ReDoS from regex backtracking
+  let result = '';
+  let i = 0;
+  while (i < source.length) {
+    const start = source.indexOf('/*', i);
+    if (start === -1) { result += source.slice(i); break; }
+    result += source.slice(i, start);
+    const end = source.indexOf('*/', start + 2);
+    if (end === -1) { result += source.slice(start).replace(/[^\n]/g, ' '); break; }
+    result += source.slice(start, end + 2).replace(/[^\n]/g, ' ');
+    i = end + 2;
+  }
+  // Line comments: [^\n]* is always linear (no backtracking possible)
+  return result.replace(/--[^\n]*/g, match => ' '.repeat(match.length));
 }
 
 /** Extract unquoted table/view names following FROM, JOIN variants, INTO, UPDATE, REFERENCES. */
