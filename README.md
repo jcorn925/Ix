@@ -112,14 +112,7 @@ gemini extensions install https://github.com/ix-infrastructure/ix-gemini-plugin
 
 ## Supported Languages
 
-Ix currently supports:
-
-- TypeScript / JavaScript
-- Python
-- Go
-- Java
-- more coming
-
+Ix currently supports over 15 languages!
 (See docs for full list)
 
 ## Quick Start
