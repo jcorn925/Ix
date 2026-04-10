@@ -99,6 +99,8 @@ openclaw plugins install ix-infrastructure/ix-openclaw-plugin
 ``` bash
 gemini extensions install https://github.com/ix-infrastructure/ix-gemini-plugin
 ```
+### OpenCode Plugin
+[OpenCode Plugin Repo](https://github.com/ix-infrastructure/ix-opencode-plugin)
 
 ## Requirements
 
