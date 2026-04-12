@@ -20,3 +20,9 @@ How did you test this?
 - [ ] Smoke tests pass
 - [ ] No raw errors introduced
 - [ ] CLI output follows Ix format
+
+## Release checklist (if merging to main)
+- [ ] `ix-cli/package.json` version bumped
+- [ ] After merge: tag pushed (`git tag vX.Y.Z && git push origin vX.Y.Z`)
+- [ ] If backend changes: `ix-memory-layer` tagged and released first
+- [ ] If `docker-compose.standalone.yml` changed: verified `curl | sh` install works
