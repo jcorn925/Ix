@@ -5,7 +5,7 @@
 #   1. Node.js (checks / installs / upgrades)
 #   2. Docker Desktop (checks / prompts)
 #   3. Backend (ArangoDB + Memory Layer via Docker)
-#   4. ix CLI
+#   4. ix CLI$
 #
 # Usage:
 #   irm https://ix-infra.com/install.ps1 | iex
@@ -99,7 +99,7 @@ function Get-LatestVersion {
 }
 
 function Test-DockerRunning {
-    $dockerInfoOutput = & docker info 2>&1
+    $dockerInfoOutput = cmd /c "docker info 2>&1"
     $dockerExitCode = $LASTEXITCODE
 
     if ($dockerExitCode -eq 0) {
